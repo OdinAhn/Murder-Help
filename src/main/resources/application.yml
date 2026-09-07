@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: murder-help
+  profiles:
+    active: local
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/killer_mall?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: killer_admin
+    password: 12345678
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+    defer-datasource-initialization: true
+
+  sql:
+    init:
+      mode: never
+
+  thymeleaf:
+    cache: false
+    prefix: classpath:/templates/
+    suffix: .html
+
+server:
+  port: 8080
+
+# JWT 설정
+jwt:
+  secret: "c3BhcnRhLXBheW1lbnQtand0LXNlY3JldC1rZXktZm9yLWJvb3RjYW1wLTIwMjYtdmVyeS1sb25nLXNlY3JldA=="  # Base64 encoded
+  expiration: 3600000  # 1시간 (ms)

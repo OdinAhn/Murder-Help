@@ -1,0 +1,166 @@
+### 0. 로그인 (토큰 발급)
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "cookie@gmail.com",
+  "password": "12345678"
+}
+
+> {%
+    client.global.set("auth_token", "Bearer " + response.body.data.token);
+%}
+
+### =========================================================================
+### [필수 진행] 최근 주문 내역 조회 및 변수 자동 세팅
+### =========================================================================
+GET http://localhost:8080/api/orders
+Authorization: {{auth_token}}
+
+> {%
+    var orders = response.body.data;
+    if (orders && orders.length > 0) {
+        var latestOrder = orders[0];
+        client.global.set("paymentId", latestOrder.paymentId);
+
+        client.log("✅ 추출된 paymentId: " + latestOrder.paymentId);
+
+        if (latestOrder.orderItems && latestOrder.orderItems.length > 0) {
+            client.log("--- 🛒 주문 상품 목록 (" + latestOrder.orderItems.length + "개) ---");
+            for (var i = 0; i < latestOrder.orderItems.length; i++) {
+                var item = latestOrder.orderItems[i];
+                // 변수명 자동 생성: orderItemId1, orderItemId2 ...
+                client.global.set("orderItemId" + (i+1), item.orderItemId);
+                client.global.set("orderItemQty" + (i+1), item.quantity);
+                client.log("👉 [상품 " + (i+1) + "] ID: " + item.orderItemId + " / 이름: " + item.productName + " / 수량: " + item.quantity + "개");
+            }
+            client.log("-----------------------------------");
+        }
+    } else {
+        client.log("⚠️ 주문 내역이 없습니다! (결제를 먼저 진행해주세요)");
+    }
+%}
+
+
+### =========================================================================
+### [필수 진행 2] 환불 가능 상품 내역 조회
+### 결제 ID를 기준으로 현재 환불이 가능한 상품 목록과 남은 수량을 조회합니다.
+### =========================================================================
+GET http://localhost:8080/api/refunds/refundable/{{paymentId}}
+Authorization: {{auth_token}}
+
+> {%
+    var items = response.body.data;
+    if (items && items.length > 0) {
+        client.log("--- 🔄 환불 가능 상품 목록 (" + items.length + "개) ---");
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            client.log("👉 [상품 " + (i+1) + "] " + item.productName + " (ID: " + item.orderItemId + ")");
+            client.log("    - 원래 수량: " + item.originalQuantity + "개 / 남은 환불 가능 수량: " + item.remainQuantity + "개");
+        }
+        client.log("---------------------------------------");
+    } else {
+        client.log("⚠️ 조회된 상품이 없습니다.");
+    }
+%}
+
+### =========================================================================
+### [시나리오 #1, #2] 전액 환불 테스트 (단독 결제 / 복합 결제)
+### 주문한 상품 수량 전체를 요청합니다.
+### (화면에서 포인트 0원 적용 시 시나리오 1, 포인트 섞어서 결제 시 시나리오 2 확인 가능)
+### =========================================================================
+POST http://localhost:8080/api/refunds
+Authorization: {{auth_token}}
+Content-Type: application/json
+
+{
+  "paymentId": {{paymentId}},
+  "cancelReason": "시나리오 1,2: 전액 환불",
+  "items": [
+    {
+      "orderItemId": {{orderItemId1}},
+      "requestQuantity": {{orderItemQty1}}
+    }
+  ]
+}
+
+### =========================================================================
+### [시나리오 #3-1] 부분 환불 테스트 (상품 1번 환불)
+### 주문 상품은 2가지 종류만 담아서 테스트
+### 상품 1번에서 수량 1개만 부분 환불합니다. (복합결제 시 비율 배분 확인용)
+### =========================================================================
+POST http://localhost:8080/api/refunds
+Authorization: {{auth_token}}
+Content-Type: application/json
+
+{
+  "paymentId": {{paymentId}},
+  "cancelReason": "1개 부분 환불",
+  "items": [
+    {
+      "orderItemId": {{orderItemId1}},
+      "requestQuantity": 1
+    }
+  ]
+}
+
+
+### =========================================================================
+### [시나리오 3-2] 부분 환불 테스트 (상품 2번 환불)
+### 주문 상품은 2가지 종류만 담아서 테스트
+### 상품 2번에서 수량 1개만 부분 환불합니다. (복합결제 시 비율 배분 확인용)
+### =========================================================================
+POST http://localhost:8080/api/refunds
+Authorization: {{auth_token}}
+Content-Type: application/json
+
+{
+"paymentId": {{paymentId}},
+"cancelReason": "상품 2번 부분 환불",
+"items": [
+{
+"orderItemId": {{orderItemId2}},
+"requestQuantity": 1
+}
+]
+}
+
+
+### =========================================================================
+### [시나리오 #6] 중복 환불 요청
+### 아래 요청의 실행 버튼을 마우스로 아주 빠르게 더블 클릭
+### 첫 번째는 성공(200), 두 번째는 TOO_MANY_REQUESTS(429) 실패가 떠야 정상입니다.
+### =========================================================================
+POST http://localhost:8080/api/refunds
+Authorization: {{auth_token}}
+Content-Type: application/json
+
+{
+  "paymentId": {{paymentId}},
+  "cancelReason": "시나리오 6: 중복 환불 시도",
+  "items": [
+    {
+      "orderItemId": {{orderItemId1}},
+      "requestQuantity": 1
+    }
+  ]
+}
+
+
+### =========================================================================
+### [예외 테스트] 잔여 수량 초과 환불 테스트 (REFUND_005 검증)
+### =========================================================================
+POST http://localhost:8080/api/refunds
+Authorization: {{auth_token}}
+Content-Type: application/json
+
+{
+  "paymentId": {{paymentId}},
+  "cancelReason": "초과 환불 테스트",
+  "items": [
+    {
+      "orderItemId": {{orderItemId1}},
+      "requestQuantity": 999 
+    }
+  ]
+}
