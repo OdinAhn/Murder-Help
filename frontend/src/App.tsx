@@ -70,7 +70,10 @@ const CODE_LENGTH = 8;
 /* ─── 세션 · 장바구니 보관 ───────────────────────────────── */
 /* localStorage 는 사생활 보호 모드나 차단 설정에서 예외를 던지므로 모두 감싼다 */
 const SESSION_KEY = "murderhelp.session";
-const CART_KEY = "murderhelp.cart";
+
+/* 장바구니는 계정마다 따로 보관한다. 로그아웃해도 남아 있다가
+   같은 계정으로 다시 로그인하면 그대로 돌아온다. */
+const cartKeyFor = (accountId: string) => `murderhelp.cart.${accountId}`;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -108,6 +111,13 @@ type Session = {
 
 /* ─── 주문 ───────────────────────────────────────────────── */
 type CartLine = { id: string; qty: number };
+
+/* 장바구니 담기와 결제는 로그인이 필요하다. 비로그인 상태에서 누른 동작을
+   여기에 담아 두었다가 로그인에 성공하면 이어서 실행한다. */
+type Pending =
+  | { kind: "add"; id: string; qty: number }
+  | { kind: "buy"; id: string; qty: number }
+  | { kind: "checkout" };
 
 type Receiver = {
   name: string;
@@ -950,7 +960,8 @@ function ProductDetail({
 }: {
   p: Product;
   onBack: () => void;
-  onAddToCart: (qty: number) => void;
+  /* 로그인이 필요해 담기지 않으면 false 를 돌려준다 */
+  onAddToCart: (qty: number) => boolean;
   onBuyNow: (qty: number) => void;
 }) {
   const [qty, setQty] = useState(1);
@@ -964,7 +975,7 @@ function ProductDetail({
   }, [p.id]);
 
   function add() {
-    onAddToCart(qty);
+    if (!onAddToCart(qty)) return;
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1800);
   }
@@ -1502,11 +1513,15 @@ function CodeTab({
 /* ─── main app ───────────────────────────────────────────── */
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => read<Session | null>(SESSION_KEY, null));
-  const [cart, setCart] = useState<CartLine[]>(() => read<CartLine[]>(CART_KEY, []));
+  const [cart, setCart] = useState<CartLine[]>(() => {
+    const saved = read<Session | null>(SESSION_KEY, null);
+    return saved ? read<CartLine[]>(cartKeyFor(saved.id), []) : [];
+  });
   const [view, setView] = useState<View>({ name: "list" });
   const [showLogin, setShowLogin] = useState(false);
   const [showCode, setShowCode] = useState(false);
-  const [afterLogin, setAfterLogin] = useState<null | "checkout">(null);
+  /* 로그인이 필요해 막힌 동작. 로그인에 성공하면 이어서 실행한다 */
+  const [afterLogin, setAfterLogin] = useState<Pending | null>(null);
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
     const saved = read<Session | null>(SESSION_KEY, null);
     return saved ? tierFor(saved.plays) : "red";
@@ -1518,10 +1533,11 @@ export default function App() {
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  /* 장바구니는 로그인 상태 유지 여부와 무관하게 이 브라우저에 남는다 */
+  /* 로그인한 계정 앞으로만 저장한다. 로그아웃 상태에서는 담을 수 없으므로
+     저장할 것도 없고, 저장된 장바구니는 다음 로그인 때까지 그대로 남는다. */
   useEffect(() => {
-    write(CART_KEY, cart);
-  }, [cart]);
+    if (session) write(cartKeyFor(session.id), cart);
+  }, [cart, session]);
 
   /* 참여 횟수가 늘어나도 같은 자리에서 저장된다 */
   useEffect(() => {
@@ -1534,15 +1550,29 @@ export default function App() {
     setActiveCodeTab(tierFor(plays));
     setShowLogin(false);
 
-    if (afterLogin === "checkout") {
-      setAfterLogin(null);
+    /* 이 계정이 지난번에 담아둔 장바구니를 되살린다 */
+    setCart(read<CartLine[]>(cartKeyFor(id), []));
+
+    /* 로그인 직전에 막혔던 동작을 이어서 실행한다.
+       이 시점에는 session 이 아직 갱신 전이라 로그인 검사를 다시 하지 않는다. */
+    const pending = afterLogin;
+    setAfterLogin(null);
+    if (!pending) return;
+
+    if (pending.kind === "checkout") {
       setView({ name: "checkout" });
+      return;
     }
+    putInCart(pending.id, pending.qty);
+    if (pending.kind === "buy") setView({ name: "checkout" });
   }
 
   function handleLogout() {
     setSession(null);
     setActiveCodeTab("red");
+    /* 화면에서만 비운다. 저장된 장바구니는 다음 로그인 때 돌아온다 */
+    setCart([]);
+    setView({ name: "list" });
   }
 
   /* 참여 코드 등록 — 승급하면 해당 등급 탭으로 옮겨 준다 */
@@ -1570,12 +1600,23 @@ export default function App() {
 
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
 
-  function addToCart(id: string, qty: number) {
+  function putInCart(id: string, qty: number) {
     setCart((prev) => {
       const found = prev.find((l) => l.id === id);
       if (found) return prev.map((l) => (l.id === id ? { ...l, qty: Math.min(99, l.qty + qty) } : l));
       return [...prev, { id, qty }];
     });
+  }
+
+  /* 담겼으면 true. 로그인이 필요하면 로그인 모달을 띄우고 false */
+  function addToCart(id: string, qty: number): boolean {
+    if (!userTier) {
+      setAfterLogin({ kind: "add", id, qty });
+      setShowLogin(true);
+      return false;
+    }
+    putInCart(id, qty);
+    return true;
   }
 
   function setQty(id: string, qty: number) {
@@ -1586,11 +1627,10 @@ export default function App() {
     setCart((prev) => prev.filter((l) => l.id !== id));
   }
 
-  /* 결제는 로그인이 필요하다 */
   function goCheckout() {
     if (cartLines.length === 0) return;
     if (!userTier) {
-      setAfterLogin("checkout");
+      setAfterLogin({ kind: "checkout" });
       setShowLogin(true);
       return;
     }
@@ -1598,12 +1638,12 @@ export default function App() {
   }
 
   function buyNow(id: string, qty: number) {
-    addToCart(id, qty);
     if (!userTier) {
-      setAfterLogin("checkout");
+      setAfterLogin({ kind: "buy", id, qty });
       setShowLogin(true);
       return;
     }
+    putInCart(id, qty);
     setView({ name: "checkout" });
   }
 
