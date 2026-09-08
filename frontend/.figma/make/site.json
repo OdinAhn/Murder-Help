@@ -1,0 +1,11 @@
+{
+  "title": "MurderHelp",
+  "description": "An online store offering a variety of firearms, weapons, and bombs with intuitive navigation for enthusiasts seeking specialized armaments.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
