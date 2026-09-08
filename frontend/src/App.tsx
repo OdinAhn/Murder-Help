@@ -939,14 +939,6 @@ function ProductCard({ p, onOpen }: { p: Product; onOpen: () => void }) {
         <div className="text-base font-bold mb-2" style={{ color: tierBright, fontFamily: "Share Tech Mono" }}>
           {krw(p.price)}
         </div>
-        {/* progress */}
-        <div className="h-px mb-1" style={{ background: C.panelBorder }}>
-          <div className="h-full" style={{ width: `${Math.min(p.funded, 100)}%`, background: tierColor }} />
-        </div>
-        <div className="flex justify-between text-[10px]" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-          <span>{p.funded}%</span>
-          <span>{p.backers} backers</span>
-        </div>
       </div>
     </div>
   );
@@ -1034,17 +1026,6 @@ function ProductDetail({
 
           <div className="text-3xl font-bold mb-5" style={{ color: t.brightColor, fontFamily: "Share Tech Mono" }}>
             {krw(p.price)}
-          </div>
-
-          {/* 펀딩 */}
-          <div className="mb-6">
-            <div className="h-px mb-1.5" style={{ background: C.panelBorder }}>
-              <div className="h-full" style={{ width: `${Math.min(p.funded, 100)}%`, background: t.color }} />
-            </div>
-            <div className="flex justify-between text-[10px]" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-              <span>{p.funded}% 달성</span>
-              <span>{p.backers} backers</span>
-            </div>
           </div>
 
           <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
