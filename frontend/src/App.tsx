@@ -35,37 +35,44 @@ const SHIPPING_FEE = 2500;
 const FREE_SHIPPING_OVER = 20000;
 
 /* ─── 등급 승급 ───────────────────────────────────────────── */
-/* 등급은 계정에 고정된 값이 아니라 서바이벌 게임 참여 횟수에서 계산된다.
-   가입 직후 0회 = Code Yellow 에서 시작한다. */
-const PURPLE_AT = 20;
-const RED_AT = 80;
+/* 등급은 계정에 고정된 값이 아니라 누적 구매금액에서 계산된다.
+   가입 직후 0원 = Code Yellow 에서 시작하고, 주문이 완료될 때마다 쌓인다. */
+const PURPLE_AT = 200_000;
+const RED_AT = 800_000;
 
-function tierFor(plays: number): Tier {
-  if (plays >= RED_AT) return "red";
-  if (plays >= PURPLE_AT) return "purple";
+function tierFor(spent: number): Tier {
+  if (spent >= RED_AT) return "red";
+  if (spent >= PURPLE_AT) return "purple";
   return "yellow";
 }
 
-/* 다음 등급과 남은 횟수. 최고 등급이면 null */
-function nextTier(plays: number): { tier: Tier; remaining: number } | null {
-  if (plays < PURPLE_AT) return { tier: "purple", remaining: PURPLE_AT - plays };
-  if (plays < RED_AT) return { tier: "red", remaining: RED_AT - plays };
+/* 다음 등급과 남은 금액. 최고 등급이면 null */
+function nextTier(spent: number): { tier: Tier; remaining: number } | null {
+  if (spent < PURPLE_AT) return { tier: "purple", remaining: PURPLE_AT - spent };
+  if (spent < RED_AT) return { tier: "red", remaining: RED_AT - spent };
   return null;
+}
+
+/* 자기 등급 이하의 상품만 볼 수 있다. 로그인하지 않으면 아무것도 볼 수 없다. */
+const TIER_RANK: Record<Tier, number> = { yellow: 0, purple: 1, red: 2 };
+
+function canAccess(userTier: Tier | null, productTier: Tier) {
+  if (!userTier) return false;
+  return TIER_RANK[productTier] <= TIER_RANK[userTier];
 }
 
 /* ─── demo accounts ──────────────────────────────────────── */
 /* 백엔드가 붙기 전까지 계정은 여기에 있다. 회원가입으로 만든 계정도
    들어가지만 새로고침하면 사라진다 — 비밀번호를 브라우저에 저장하지
    않으려고 일부러 메모리에만 둔다. */
-const ACCOUNTS: Record<string, { pw: string; plays: number }> = {
-  red: { pw: "1234", plays: RED_AT },
-  purple: { pw: "1234", plays: PURPLE_AT },
-  yellow: { pw: "1234", plays: 0 },
+const ACCOUNTS: Record<string, { pw: string; spent: number }> = {
+  red: { pw: "1234", spent: RED_AT },
+  purple: { pw: "1234", spent: PURPLE_AT },
+  yellow: { pw: "1234", spent: 0 },
 };
 
 const MIN_ID = 4;
 const MIN_PW = 6;
-const CODE_LENGTH = 8;
 
 /* ─── 세션 · 장바구니 보관 ───────────────────────────────── */
 /* localStorage 는 사생활 보호 모드나 차단 설정에서 예외를 던지므로 모두 감싼다 */
@@ -101,12 +108,10 @@ function drop(key: string) {
 }
 
 /* ─── 세션 ───────────────────────────────────────────────── */
-/* 등급은 저장하지 않는다. plays 에서 계산하므로 저장하면 두 값이 어긋난다. */
+/* 등급은 저장하지 않는다. spent 에서 계산하므로 저장하면 두 값이 어긋난다. */
 type Session = {
   id: string;
-  plays: number;
-  usedCodes: string[];
-  remember: boolean;
+  spent: number;
 };
 
 /* ─── 주문 ───────────────────────────────────────────────── */
@@ -164,7 +169,8 @@ type View =
   | { name: "detail"; id: string }
   | { name: "cart" }
   | { name: "checkout" }
-  | { name: "done"; orderNo: string; total: number };
+  | { name: "done"; orderNo: string; total: number }
+  | { name: "mypage" };
 
 /* ─── 공통 조각 ──────────────────────────────────────────── */
 function TierBadge({ tier, small }: { tier: Tier; small?: boolean }) {
@@ -277,14 +283,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 /* ─── login modal ────────────────────────────────────────── */
-function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number, remember: boolean) => void; onClose: () => void }) {
-  const [mode, setMode] = useState<"login" | "signup" | "forgot" | "sent">("login");
+function LoginModal({ onLogin, onClose }: { onLogin: (id: string, spent: number) => void; onClose: () => void }) {
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [id, setId] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [isAdult, setIsAdult] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -311,21 +316,7 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
       setError("아이디 또는 비밀번호가 올바르지 않습니다.");
       return;
     }
-    onLogin(key, account.plays, remember);
-  }
-
-  async function sendReset(e: FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    if (!id.trim()) {
-      setError("아이디를 입력해 주세요.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    setBusy(false);
-    setMode("sent");
+    onLogin(key, account.spent);
   }
 
   /* 회원가입. 서버가 붙으면 이 검사는 서버 응답으로 대체된다 —
@@ -364,11 +355,11 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
     setError("");
     await new Promise((resolve) => setTimeout(resolve, 900));
 
-    ACCOUNTS[account] = { pw, plays: 0 };
-    onLogin(account, 0, true);
+    ACCOUNTS[account] = { pw, spent: 0 };
+    onLogin(account, 0);
   }
 
-  function goto(next: "login" | "signup" | "forgot") {
+  function goto(next: "login" | "signup") {
     setMode(next);
     setError("");
     setPw("");
@@ -396,13 +387,10 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
         >
           {mode === "login" && "Member Login"}
           {mode === "signup" && "Join MurderHelp"}
-          {(mode === "forgot" || mode === "sent") && "Find Password"}
         </h2>
         <p className="text-xs mb-6" style={{ color: C.textMuted, fontFamily: "Share Tech Mono, monospace" }}>
           {mode === "login" && "// 로그인하시면 회원님의 등급이 자동으로 적용됩니다"}
           {mode === "signup" && "// 신규 회원은 Code Yellow 등급으로 시작합니다"}
-          {mode === "forgot" && "// 가입하신 아이디로 재설정 링크를 보내드립니다"}
-          {mode === "sent" && "// 전송 완료"}
         </p>
 
         {mode === "login" && (
@@ -427,28 +415,6 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
                   className="w-full px-4 py-3 text-sm outline-none"
                   style={fieldStyle}
                 />
-              </div>
-
-              <div className="flex items-center justify-between mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={remember}
-                    onChange={(e) => setRemember(e.target.checked)}
-                    style={{ accentColor: C.red }}
-                  />
-                  <span className="text-[11px]" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif" }}>
-                    로그인 상태 유지
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => goto("forgot")}
-                  className="text-[11px]"
-                  style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif", textDecoration: "underline" }}
-                >
-                  비밀번호를 잊으셨나요?
-                </button>
               </div>
 
               {error && (
@@ -503,12 +469,12 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
               </div>
               <div className="space-y-1">
                 {(["red", "purple", "yellow"] as const).map((key) => {
-                  const plays = ACCOUNTS[key].plays;
+                  const spent = ACCOUNTS[key].spent;
                   return (
                     <div key={key} className="flex items-center justify-between text-[11px]" style={{ fontFamily: "Share Tech Mono" }}>
                       <span style={{ color: C.textDim }}>{key}</span>
-                      <span style={{ color: C.textMuted }}>{plays}회</span>
-                      <span style={{ color: TIERS[tierFor(plays)].brightColor }}>{TIERS[tierFor(plays)].label}</span>
+                      <span style={{ color: C.textMuted }}>{krw(spent)}</span>
+                      <span style={{ color: TIERS[tierFor(spent)].brightColor }}>{TIERS[tierFor(spent)].label}</span>
                     </div>
                   );
                 })}
@@ -609,278 +575,31 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, plays: number,
             </button>
           </form>
         )}
-
-        {mode === "forgot" && (
-          <form onSubmit={sendReset}>
-            <input
-              autoFocus
-              value={id}
-              onChange={(e) => { setId(e.target.value); setError(""); }}
-              placeholder="아이디"
-              disabled={busy}
-              className="w-full px-4 py-3 text-sm outline-none mb-4"
-              style={fieldStyle}
-            />
-
-            {error && (
-              <p className="text-xs mb-4" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full py-3 font-bold uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
-              style={{
-                background: busy ? C.redDim : C.red,
-                color: "#fff",
-                fontFamily: "Share Tech Mono",
-                border: `1px solid ${busy ? C.redDim : C.redBright}`,
-                cursor: busy ? "wait" : "pointer",
-              }}
-            >
-              {busy ? <><Spinner /> 전송 중…</> : "재설정 링크 보내기 →"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => goto("login")}
-              disabled={busy}
-              className="w-full mt-2 py-2 text-xs uppercase tracking-widest"
-              style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}
-            >
-              ← Back to login
-            </button>
-          </form>
-        )}
-
-        {mode === "sent" && (
-          <>
-            <div className="px-4 py-5 mb-4" style={{ border: `1px solid ${C.panelBorder}`, background: "rgba(0,0,0,0.4)" }}>
-              <p className="text-sm leading-relaxed" style={{ color: C.text, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
-                <span style={{ color: C.redBright }}>{id.trim()}</span> 계정으로 비밀번호 재설정 링크를 보냈습니다.
-                링크는 30분간 유효합니다.
-              </p>
-            </div>
-            <p className="text-[11px] mb-4" style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif" }}>
-              메일이 오지 않으면 스팸함을 확인해 주세요.
-            </p>
-            <button
-              onClick={() => goto("login")}
-              className="w-full py-3 font-bold uppercase text-sm tracking-widest"
-              style={{ background: C.red, color: "#fff", fontFamily: "Share Tech Mono", border: `1px solid ${C.redBright}` }}
-            >
-              로그인으로 돌아가기
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
 }
 
 /* ─── 등급 진행 바 ───────────────────────────────────────── */
-function TierProgress({ plays }: { plays: number }) {
-  const next = nextTier(plays);
-  const base = plays < PURPLE_AT ? 0 : PURPLE_AT;
-  const target = plays < PURPLE_AT ? PURPLE_AT : RED_AT;
-  const pct = next ? ((plays - base) / (target - base)) * 100 : 100;
+function TierProgress({ spent }: { spent: number }) {
+  const next = nextTier(spent);
+  const base = spent < PURPLE_AT ? 0 : PURPLE_AT;
+  const target = spent < PURPLE_AT ? PURPLE_AT : RED_AT;
+  const pct = next ? ((spent - base) / (target - base)) * 100 : 100;
   const color = TIERS[next ? next.tier : "red"].color;
 
   return (
     <div className="w-full">
       <div className="flex justify-between items-baseline mb-1.5">
         <span className="text-[10px] uppercase tracking-widest" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-          게임 참여 {plays}회
+          누적 구매 {krw(spent)}
         </span>
         <span className="text-[10px]" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
-          {next ? `${TIERS[next.tier].label}까지 ${next.remaining}회` : "최고 등급 달성"}
+          {next ? `${TIERS[next.tier].label}까지 ${krw(next.remaining)}` : "최고 등급 달성"}
         </span>
       </div>
       <div className="h-1" style={{ background: "rgba(255,255,255,0.08)" }}>
         <div className="h-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, background: color }} />
-      </div>
-    </div>
-  );
-}
-
-/* ─── 참여 코드 등록 ─────────────────────────────────────── */
-function CodeModal({
-  session, onRedeem, onClose,
-}: {
-  session: Session;
-  onRedeem: (code: string) => void;
-  onClose: () => void;
-}) {
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [done, setDone] = useState<null | { plays: number; upgraded: Tier | null }>(null);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-
-    const value = code.trim().toUpperCase();
-    if (!new RegExp(`^[A-Z0-9]{${CODE_LENGTH}}$`).test(value)) {
-      setError(`참여 코드는 영문·숫자 ${CODE_LENGTH}자리입니다.`);
-      return;
-    }
-    if (session.usedCodes.includes(value)) {
-      setError("이미 등록된 코드입니다.");
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-    /* 서버가 붙으면 여기서 코드의 유효성을 서버에 확인해야 한다.
-       발급되지 않은 코드나 남이 쓴 코드는 클라이언트가 알 수 없다. */
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const before = tierFor(session.plays);
-    const after = tierFor(session.plays + 1);
-    onRedeem(value);
-    setBusy(false);
-    setDone({ plays: session.plays + 1, upgraded: after !== before ? after : null });
-  }
-
-  function again() {
-    setCode("");
-    setError("");
-    setDone(null);
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
-      onClick={busy ? undefined : onClose}
-    >
-      <div
-        className="w-full max-w-sm mx-4 p-8"
-        style={{
-          background: "rgba(12,0,0,0.97)",
-          border: `1px solid ${C.panelBorder}`,
-          boxShadow: `0 0 60px rgba(200,30,0,0.2)`,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-2xl font-bold uppercase mb-1 tracking-wide" style={{ fontFamily: "Cinzel, serif", color: C.text }}>
-          Game Code
-        </h2>
-        <p className="text-xs mb-6" style={{ color: C.textMuted, fontFamily: "Share Tech Mono, monospace" }}>
-          // 서바이벌 게임 참여 쿠폰의 {CODE_LENGTH}자리 코드를 입력하세요
-        </p>
-
-        {!done && (
-          <>
-            <div className="mb-5">
-              <TierProgress plays={session.plays} />
-            </div>
-
-            <form onSubmit={submit}>
-              <input
-                autoFocus
-                value={code}
-                onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(""); }}
-                placeholder="A1B2C3D4"
-                maxLength={CODE_LENGTH}
-                disabled={busy}
-                className="w-full px-4 py-3 text-center outline-none mb-4"
-                style={{
-                  background: "rgba(0,0,0,0.45)",
-                  border: `1px solid ${C.panelBorder}`,
-                  color: C.text,
-                  fontFamily: "Share Tech Mono, monospace",
-                  fontSize: 20,
-                  letterSpacing: "0.3em",
-                }}
-              />
-
-              {error && (
-                <p className="text-xs mb-4" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
-                  {error}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full py-3 font-bold uppercase text-sm tracking-widest transition-all flex items-center justify-center gap-2"
-                style={{
-                  background: busy ? C.redDim : C.red,
-                  color: "#fff",
-                  fontFamily: "Share Tech Mono",
-                  border: `1px solid ${busy ? C.redDim : C.redBright}`,
-                  cursor: busy ? "wait" : "pointer",
-                }}
-              >
-                {busy ? <><Spinner /> 확인 중…</> : "참여 등록 →"}
-              </button>
-            </form>
-
-            <button
-              onClick={onClose}
-              disabled={busy}
-              className="w-full mt-2 py-2 text-xs uppercase tracking-widest"
-              style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}
-            >
-              Cancel
-            </button>
-
-            <p className="text-[10px] mt-5 leading-relaxed" style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif" }}>
-              참여 {PURPLE_AT}회에 Code Purple, {RED_AT}회에 Code Red로 자동 승급됩니다.
-              코드 하나는 한 번만 등록할 수 있습니다.
-            </p>
-          </>
-        )}
-
-        {done && (
-          <>
-            {done.upgraded ? (
-              <div
-                className="px-5 py-6 mb-4 text-center"
-                style={{ border: `1px solid ${TIERS[done.upgraded].color}`, background: `${TIERS[done.upgraded].color}18` }}
-              >
-                <div
-                  className="text-lg font-bold uppercase mb-3"
-                  style={{ fontFamily: "Cinzel, serif", color: TIERS[done.upgraded].brightColor }}
-                >
-                  Tier Up
-                </div>
-                <div className="flex justify-center mb-3">
-                  <TierBadge tier={done.upgraded} />
-                </div>
-                <p className="text-sm leading-relaxed" style={{ color: C.text, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
-                  참여 {done.plays}회를 달성해 <strong>{TIERS[done.upgraded].label}</strong> 등급으로 올라갔습니다.
-                </p>
-              </div>
-            ) : (
-              <div className="px-5 py-6 mb-4" style={{ border: `1px solid ${C.panelBorder}`, background: "rgba(0,0,0,0.4)" }}>
-                <p className="text-sm leading-relaxed mb-4" style={{ color: C.text, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
-                  참여가 기록되었습니다. 누적 <strong>{done.plays}회</strong>입니다.
-                </p>
-                <TierProgress plays={done.plays} />
-              </div>
-            )}
-
-            <button
-              onClick={again}
-              className="w-full py-3 font-bold uppercase text-sm tracking-widest"
-              style={{ background: C.red, color: "#fff", fontFamily: "Share Tech Mono", border: `1px solid ${C.redBright}` }}
-            >
-              코드 더 등록하기
-            </button>
-            <button
-              onClick={onClose}
-              className="w-full mt-2 py-2 text-xs uppercase tracking-widest"
-              style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}
-            >
-              Close
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
@@ -1451,6 +1170,108 @@ function Sidebar({ category, activeSub, onSub }: { category: string; activeSub: 
 }
 
 /* ─── code tab ───────────────────────────────────────────── */
+/* ─── 마이페이지 ─────────────────────────────────────────── */
+/* 지금은 메뉴 두 개만 있다. 각 메뉴의 실제 화면은 아직 없다. */
+const MYPAGE_MENUS = [
+  { key: "orders", label: "내 주문내역 관리", desc: "주문 조회 · 배송 상태 · 취소" },
+  { key: "reviews", label: "내 리뷰 관리", desc: "작성한 리뷰 확인 · 수정 · 삭제" },
+];
+
+function MyPage({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8">
+      <button
+        onClick={onBack}
+        className="text-xs uppercase tracking-widest mb-4"
+        style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}
+      >
+        ← 목록으로
+      </button>
+
+      <PageTitle note="// 회원 정보와 활동 내역">My Page</PageTitle>
+
+      <div className="max-w-2xl" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
+        {MYPAGE_MENUS.map((menu) => (
+          <div
+            key={menu.key}
+            className="flex items-center gap-4 px-6 py-5"
+            style={{ borderBottom: `1px solid ${C.panelBorder}` }}
+          >
+            <div className="flex-1">
+              <div className="text-base mb-1" style={{ color: C.text, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
+                {menu.label}
+              </div>
+              <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif" }}>
+                {menu.desc}
+              </div>
+            </div>
+            <span
+              className="text-[10px] uppercase tracking-widest px-2 py-1 shrink-0"
+              style={{ border: `1px solid ${C.panelBorder}`, color: C.textMuted, fontFamily: "Share Tech Mono" }}
+            >
+              준비 중
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 로그인 게이트 ──────────────────────────────────────── */
+/* 로그인 전에는 상품을 볼 수 없다. 목록 대신 이 화면만 보여준다. */
+function Gate({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-20">
+      <div
+        className="max-w-md mx-auto p-10 text-center"
+        style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}
+      >
+        <div className="flex justify-center mb-5">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.redBright} strokeWidth="1.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+
+        <div className="text-2xl font-bold uppercase mb-3" style={{ fontFamily: "Cinzel, serif", color: C.text }}>
+          Members Only
+        </div>
+        <p className="text-sm leading-relaxed mb-8" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
+          로그인하셔야 상품을 보실 수 있습니다.<br />
+          회원 등급에 따라 열람 가능한 상품이 달라집니다.
+        </p>
+
+        <div className="mb-8" style={{ borderTop: `1px solid ${C.panelBorder}` }}>
+          {(["red", "purple", "yellow"] as Tier[]).map((tier) => (
+            <div
+              key={tier}
+              className="flex items-center justify-between py-2.5"
+              style={{ borderBottom: `1px solid ${C.panelBorder}` }}
+            >
+              <TierBadge tier={tier} small />
+              <span className="text-[11px]" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
+                {tier === "yellow" ? "기본 등급" : `누적 구매 ${krw(tier === "purple" ? PURPLE_AT : RED_AT)} 이상`}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={onLogin}
+          className="w-full py-3.5 text-sm font-bold uppercase tracking-widest"
+          style={{ background: C.red, color: "#fff", border: `1px solid ${C.redBright}`, fontFamily: "Share Tech Mono" }}
+        >
+          Login →
+        </button>
+        <p className="text-[10px] mt-4" style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif" }}>
+          BB탄 전용 에어소프트 제품입니다. 만 18세 이상만 가입하실 수 있습니다.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CodeTab({
   tier, active, userTier, onClick,
 }: {
@@ -1458,13 +1279,20 @@ function CodeTab({
 }) {
   const t = TIERS[tier];
   const owned = userTier === tier;
+  /* 내 등급보다 높은 탭은 열 수 없다 */
+  const locked = !canAccess(userTier, tier);
+
   return (
     <button
-      onClick={onClick}
+      onClick={locked ? undefined : onClick}
+      disabled={locked}
+      title={locked ? `${t.label} 등급부터 볼 수 있습니다` : undefined}
       className="flex-1 flex flex-col items-center gap-1.5 py-4 transition-all relative"
       style={{
         background: active ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.28)",
         borderBottom: active ? `2px solid ${t.color}` : "2px solid transparent",
+        opacity: locked ? 0.4 : 1,
+        cursor: locked ? "not-allowed" : "pointer",
       }}
     >
       <div className="flex items-center gap-2">
@@ -1486,6 +1314,12 @@ function CodeTab({
           >
             MY
           </span>
+        )}
+        {locked && (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
         )}
       </div>
       <span
@@ -1519,16 +1353,15 @@ export default function App() {
   });
   const [view, setView] = useState<View>({ name: "list" });
   const [showLogin, setShowLogin] = useState(false);
-  const [showCode, setShowCode] = useState(false);
   /* 로그인이 필요해 막힌 동작. 로그인에 성공하면 이어서 실행한다 */
   const [afterLogin, setAfterLogin] = useState<Pending | null>(null);
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
     const saved = read<Session | null>(SESSION_KEY, null);
-    return saved ? tierFor(saved.plays) : "red";
+    return saved ? tierFor(saved.spent) : "red";
   });
 
-  /* 등급은 저장된 값이 아니라 참여 횟수에서 계산한다 */
-  const userTier: Tier | null = session ? tierFor(session.plays) : null;
+  /* 등급은 저장된 값이 아니라 누적 구매금액에서 계산한다 */
+  const userTier: Tier | null = session ? tierFor(session.spent) : null;
   const [activeNav, setActiveNav] = useState("Guns");
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1539,9 +1372,9 @@ export default function App() {
     if (session) write(cartKeyFor(session.id), cart);
   }, [cart, session]);
 
-  /* 참여 횟수가 늘어나도 같은 자리에서 저장된다 */
+  /* 누적 구매금액이 올라가도 같은 자리에서 저장된다 */
   useEffect(() => {
-    if (session?.remember) write(SESSION_KEY, session);
+    if (session) write(SESSION_KEY, session);
     else drop(SESSION_KEY);
   }, [session]);
 
@@ -1582,9 +1415,9 @@ export default function App() {
     navigate({ name: "list" });
   }
 
-  function handleLogin(id: string, plays: number, remember: boolean) {
-    setSession({ id, plays, usedCodes: [], remember });
-    setActiveCodeTab(tierFor(plays));
+  function handleLogin(id: string, spent: number) {
+    setSession({ id, spent });
+    setActiveCodeTab(tierFor(spent));
     setShowLogin(false);
 
     /* 이 계정이 지난번에 담아둔 장바구니를 되살린다 */
@@ -1610,14 +1443,6 @@ export default function App() {
     /* 화면에서만 비운다. 저장된 장바구니는 다음 로그인 때 돌아온다 */
     setCart([]);
     navigate({ name: "list" });
-  }
-
-  /* 참여 코드 등록 — 승급하면 해당 등급 탭으로 옮겨 준다 */
-  function redeemCode(code: string) {
-    if (!session) return;
-    const plays = session.plays + 1;
-    setSession({ ...session, plays, usedCodes: [...session.usedCodes, code] });
-    if (tierFor(plays) !== tierFor(session.plays)) setActiveCodeTab(tierFor(plays));
   }
 
   function changeNav(cat: string) {
@@ -1652,6 +1477,9 @@ export default function App() {
       setShowLogin(true);
       return false;
     }
+    /* 등급이 모자라면 담을 수 없다 */
+    const p = PRODUCTS.find((item) => item.id === id);
+    if (!p || !canAccess(userTier, p.tier)) return false;
     putInCart(id, qty);
     return true;
   }
@@ -1680,25 +1508,40 @@ export default function App() {
       setShowLogin(true);
       return;
     }
+    const p = PRODUCTS.find((item) => item.id === id);
+    if (!p || !canAccess(userTier, p.tier)) return;
     putInCart(id, qty);
     navigate({ name: "checkout" });
   }
 
   function finishOrder(orderNo: string, total: number) {
     setCart([]);
+
+    /* 결제금액을 누적해 등급을 다시 계산한다. 서버가 붙으면 이 누적은
+       서버가 하고 응답으로 내려주는 값을 쓰게 된다. */
+    if (session) {
+      const spent = session.spent + total;
+      ACCOUNTS[session.id].spent = spent;
+      setSession({ ...session, spent });
+      if (tierFor(spent) !== tierFor(session.spent)) setActiveCodeTab(tierFor(spent));
+    }
+
     /* 주문서를 완료 화면으로 대체한다 — 뒤로 가기로 비워진 주문서에 돌아가지 않도록 */
     navigate({ name: "done", orderNo, total }, true);
   }
 
-  /* filter products: category + sub + code tab tier */
+  /* filter products: category + sub + code tab tier.
+     등급이 모자란 상품은 애초에 목록에 오르지 않는다. */
   const filtered = PRODUCTS.filter((p) => {
     if (p.category !== activeNav) return false;
     if (activeSub !== "전체" && p.sub !== activeSub) return false;
     if (p.tier !== activeCodeTab) return false;
-    return true;
+    return canAccess(userTier, p.tier);
   });
 
   const detailProduct = view.name === "detail" ? PRODUCTS.find((p) => p.id === view.id) ?? null : null;
+  /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
+  const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
 
   return (
@@ -1707,10 +1550,6 @@ export default function App() {
 
       {showLogin && (
         <LoginModal onLogin={handleLogin} onClose={() => { setShowLogin(false); setAfterLogin(null); }} />
-      )}
-
-      {showCode && session && (
-        <CodeModal session={session} onRedeem={redeemCode} onClose={() => setShowCode(false)} />
       )}
 
       {/* ── HEADER ─────────────────────────────────── */}
@@ -1807,6 +1646,23 @@ export default function App() {
                   >
                     Logout
                   </button>
+                  <button
+                    onClick={() => navigate({ name: "mypage" })}
+                    className="text-xs px-3 py-1.5 uppercase tracking-wider transition-all"
+                    style={{
+                      border: `1px solid ${view.name === "mypage" ? C.red : C.panelBorder}`,
+                      color: view.name === "mypage" ? C.text : C.textDim,
+                      fontFamily: "Share Tech Mono",
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = C.text; (e.currentTarget as HTMLButtonElement).style.borderColor = C.red; }}
+                    onMouseLeave={(e) => {
+                      const on = view.name === "mypage";
+                      (e.currentTarget as HTMLButtonElement).style.color = on ? C.text : C.textDim;
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = on ? C.red : C.panelBorder;
+                    }}
+                  >
+                    마이페이지
+                  </button>
                 </div>
               ) : (
                 <button
@@ -1845,7 +1701,10 @@ export default function App() {
         )}
       </header>
 
-      {onListPage && (
+      {/* 로그인 전에는 상품을 일절 보여주지 않는다 */}
+      {!session && <Gate onLogin={() => setShowLogin(true)} />}
+
+      {session && onListPage && (
         <>
           {/* ── CODE TABS ──────────────────────────────── */}
           <div className="flex" style={{ background: "rgba(0,0,0,0.55)", borderBottom: `1px solid ${C.panelBorder}` }}>
@@ -1861,23 +1720,6 @@ export default function App() {
           </div>
 
           {/* ── TIER INFO BANNER ────────────────────────── */}
-          {!userTier && (
-            <div
-              className="py-3 px-6 flex items-center justify-between gap-4"
-              style={{ background: "rgba(80,0,0,0.35)", borderBottom: `1px solid ${C.panelBorder}` }}
-            >
-              <div className="flex items-center gap-3">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.redBright} strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <span className="text-xs" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
-                  로그인하시면 회원님의 등급이 자동으로 적용됩니다.
-                  &nbsp;·&nbsp; Code Red = VIP, Code Purple = 중급, Code Yellow = 엔트리
-                </span>
-              </div>
-            </div>
-          )}
-
           {session && userTier && (
             <div
               className="py-2.5 px-6 flex items-center gap-4 flex-wrap"
@@ -1891,22 +1733,8 @@ export default function App() {
                 {TIERS[userTier].desc}
               </span>
               <div className="flex-1" style={{ minWidth: 220, maxWidth: 420 }}>
-                <TierProgress plays={session.plays} />
+                <TierProgress spent={session.spent} />
               </div>
-              <button
-                onClick={() => setShowCode(true)}
-                className="shrink-0 text-xs font-bold px-3 py-1.5 uppercase tracking-wider transition-all"
-                style={{
-                  border: `1px solid ${C.redDim}`,
-                  background: "rgba(0,0,0,0.4)",
-                  color: C.text,
-                  fontFamily: "Share Tech Mono",
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.redBright; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.redDim; }}
-              >
-                게임 코드 등록 →
-              </button>
             </div>
           )}
 
@@ -2029,7 +1857,7 @@ export default function App() {
         </>
       )}
 
-      {view.name === "detail" && detailProduct && (
+      {session && view.name === "detail" && detailProduct && detailAllowed && (
         <ProductDetail
           p={detailProduct}
           onBack={() => navigate({ name: "list" })}
@@ -2038,7 +1866,31 @@ export default function App() {
         />
       )}
 
-      {view.name === "cart" && (
+      {session && view.name === "detail" && detailProduct && !detailAllowed && (
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-20">
+          <div className="max-w-md mx-auto p-10 text-center" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
+            <div className="text-xl font-bold uppercase mb-3" style={{ fontFamily: "Cinzel, serif", color: C.text }}>
+              Locked
+            </div>
+            <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
+              {TIERS[detailProduct.tier].label} 등급부터 보실 수 있는 상품입니다.
+            </p>
+            <button
+              onClick={() => navigate({ name: "list" })}
+              className="w-full py-3 text-sm font-bold uppercase tracking-widest"
+              style={{ background: C.red, color: "#fff", border: `1px solid ${C.redBright}`, fontFamily: "Share Tech Mono" }}
+            >
+              목록으로 →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {session && view.name === "mypage" && (
+        <MyPage onBack={() => navigate({ name: "list" })} />
+      )}
+
+      {session && view.name === "cart" && (
         <CartView
           lines={cartLines}
           onQty={setQty}
@@ -2048,7 +1900,7 @@ export default function App() {
         />
       )}
 
-      {view.name === "checkout" && (
+      {session && view.name === "checkout" && (
         <CheckoutView
           lines={cartLines}
           userTier={userTier}
@@ -2057,7 +1909,7 @@ export default function App() {
         />
       )}
 
-      {view.name === "done" && (
+      {session && view.name === "done" && (
         <OrderDone orderNo={view.orderNo} total={view.total} onHome={() => navigate({ name: "list" })} />
       )}
 
