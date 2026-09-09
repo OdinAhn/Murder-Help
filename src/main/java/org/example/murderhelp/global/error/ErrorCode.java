@@ -61,7 +61,11 @@ public enum ErrorCode {
     REFUND_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "REFUND_004", "환불 대상 상품이 존재하지 않습니다."),
     EXCEED_REFUNDABLE_QUANTITY(HttpStatus.BAD_REQUEST, "REFUND_005", "잔여 환불 가능 수량을 초과했습니다."),
     REFUND_AMOUNT_MISMATCH(HttpStatus.CONFLICT, "REFUND_006", "DB와 PG사의 결제 잔액이 일치하지 않습니다."),
-    DUPLICATE_REFUND_REQUEST(HttpStatus.TOO_MANY_REQUESTS, "REFUND_007", "환불 처리가 진행 중입니다. 잠시 후 다시 시도해주세요.")
+    DUPLICATE_REFUND_REQUEST(HttpStatus.TOO_MANY_REQUESTS, "REFUND_007", "환불 처리가 진행 중입니다. 잠시 후 다시 시도해주세요."),
+    
+    // Chat
+    CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "CHAT_001", "채팅방을 찾을 수 없습니다."),
+    INVALID_CHAT_ROOM_STATUS(HttpStatus.BAD_REQUEST, "CHAT_002", "유효하지 않은 채팅방 상태 변경입니다.")
     ;
 
     private final HttpStatus status;
