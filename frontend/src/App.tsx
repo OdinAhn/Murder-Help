@@ -892,10 +892,10 @@ function ProductCard({ p, onOpen }: { p: Product; onOpen: () => void }) {
   const tierColor = TIERS[p.tier].color;
   const tierBright = TIERS[p.tier].brightColor;
 
+  /* HOT — 인기가 가장 많은 상품 · NEW — 새로 등록된 상품 */
   const badgeColors: Record<string, string> = {
     HOT: C.red,
     NEW: "#1a7a3a",
-    VIP: C.redBright,
   };
 
   return (
@@ -1003,7 +1003,7 @@ function ProductDetail({
             <span
               className="absolute top-3 left-3 text-[10px] font-black uppercase tracking-widest px-2 py-1"
               style={{
-                background: p.badge === "NEW" ? "#1a7a3a" : p.badge === "VIP" ? C.redBright : C.red,
+                background: p.badge === "NEW" ? "#1a7a3a" : C.red,
                 color: "#fff",
                 fontFamily: "Share Tech Mono",
               }}
@@ -1545,6 +1545,43 @@ export default function App() {
     else drop(SESSION_KEY);
   }, [session]);
 
+  /* ── 브라우저 히스토리 ──
+     화면 전환을 히스토리에 남겨 뒤로/앞으로 가기(마우스 옆 버튼 포함)가 동작하게 한다. */
+  useEffect(() => {
+    window.history.replaceState({ view: { name: "list" } }, "");
+    function onPop(e: PopStateEvent) {
+      const saved = (e.state as { view?: View } | null)?.view;
+      setView(saved ?? { name: "list" });
+      window.scrollTo({ top: 0 });
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  /* 같은 화면으로의 이동은 히스토리에 쌓지 않는다 — 뒤로 가기를 여러 번 눌러야 하는 것을 막는다 */
+  function sameView(a: View, b: View) {
+    if (a.name !== b.name) return false;
+    if (a.name === "detail" && b.name === "detail") return a.id === b.id;
+    return true;
+  }
+
+  function navigate(next: View, replace = false) {
+    if (!sameView(view, next)) {
+      if (replace) window.history.replaceState({ view: next }, "");
+      else window.history.pushState({ view: next }, "");
+    }
+    setView(next);
+    window.scrollTo({ top: 0 });
+  }
+
+  /* 로고 클릭 — 목록으로 돌아가면서 카테고리·서브카테고리도 처음 상태로 되돌린다 */
+  function goHome() {
+    setActiveNav("Guns");
+    setActiveSub("전체");
+    setMenuOpen(false);
+    navigate({ name: "list" });
+  }
+
   function handleLogin(id: string, plays: number, remember: boolean) {
     setSession({ id, plays, usedCodes: [], remember });
     setActiveCodeTab(tierFor(plays));
@@ -1560,11 +1597,11 @@ export default function App() {
     if (!pending) return;
 
     if (pending.kind === "checkout") {
-      setView({ name: "checkout" });
+      navigate({ name: "checkout" });
       return;
     }
     putInCart(pending.id, pending.qty);
-    if (pending.kind === "buy") setView({ name: "checkout" });
+    if (pending.kind === "buy") navigate({ name: "checkout" });
   }
 
   function handleLogout() {
@@ -1572,7 +1609,7 @@ export default function App() {
     setActiveCodeTab("red");
     /* 화면에서만 비운다. 저장된 장바구니는 다음 로그인 때 돌아온다 */
     setCart([]);
-    setView({ name: "list" });
+    navigate({ name: "list" });
   }
 
   /* 참여 코드 등록 — 승급하면 해당 등급 탭으로 옮겨 준다 */
@@ -1587,7 +1624,7 @@ export default function App() {
     setActiveNav(cat);
     setActiveSub("전체");
     setMenuOpen(false);
-    setView({ name: "list" });
+    navigate({ name: "list" });
   }
 
   /* ── 장바구니 ── */
@@ -1634,7 +1671,7 @@ export default function App() {
       setShowLogin(true);
       return;
     }
-    setView({ name: "checkout" });
+    navigate({ name: "checkout" });
   }
 
   function buyNow(id: string, qty: number) {
@@ -1644,13 +1681,13 @@ export default function App() {
       return;
     }
     putInCart(id, qty);
-    setView({ name: "checkout" });
+    navigate({ name: "checkout" });
   }
 
   function finishOrder(orderNo: string, total: number) {
     setCart([]);
-    setView({ name: "done", orderNo, total });
-    window.scrollTo({ top: 0 });
+    /* 주문서를 완료 화면으로 대체한다 — 뒤로 가기로 비워진 주문서에 돌아가지 않도록 */
+    navigate({ name: "done", orderNo, total }, true);
   }
 
   /* filter products: category + sub + code tab tier */
@@ -1684,7 +1721,7 @@ export default function App() {
         <div className="max-w-[1280px] mx-auto px-4 md:px-8">
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
-            <button className="flex items-center gap-3" onClick={() => setView({ name: "list" })}>
+            <button className="flex items-center gap-3" onClick={goHome}>
               <div className="w-7 h-7 flex items-center justify-center text-[10px] font-black"
                 style={{ background: C.red, color: "#fff", fontFamily: "Cinzel, serif" }}>
                 MH
@@ -1735,7 +1772,7 @@ export default function App() {
 
               {/* cart */}
               <button
-                onClick={() => setView({ name: "cart" })}
+                onClick={() => navigate({ name: "cart" })}
                 className="relative flex items-center justify-center transition-all"
                 style={{ width: 34, height: 30, border: `1px solid ${C.panelBorder}`, color: C.textDim }}
                 aria-label="장바구니"
@@ -1960,7 +1997,7 @@ export default function App() {
                 {filtered.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {filtered.map((p) => (
-                      <ProductCard key={p.id} p={p} onOpen={() => setView({ name: "detail", id: p.id })} />
+                      <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
                     ))}
                   </div>
                 ) : (
@@ -1995,7 +2032,7 @@ export default function App() {
       {view.name === "detail" && detailProduct && (
         <ProductDetail
           p={detailProduct}
-          onBack={() => setView({ name: "list" })}
+          onBack={() => navigate({ name: "list" })}
           onAddToCart={(qty) => addToCart(detailProduct.id, qty)}
           onBuyNow={(qty) => buyNow(detailProduct.id, qty)}
         />
@@ -2006,7 +2043,7 @@ export default function App() {
           lines={cartLines}
           onQty={setQty}
           onRemove={removeLine}
-          onContinue={() => setView({ name: "list" })}
+          onContinue={() => navigate({ name: "list" })}
           onCheckout={goCheckout}
         />
       )}
@@ -2015,13 +2052,13 @@ export default function App() {
         <CheckoutView
           lines={cartLines}
           userTier={userTier}
-          onBack={() => setView({ name: "cart" })}
+          onBack={() => navigate({ name: "cart" })}
           onDone={finishOrder}
         />
       )}
 
       {view.name === "done" && (
-        <OrderDone orderNo={view.orderNo} total={view.total} onHome={() => setView({ name: "list" })} />
+        <OrderDone orderNo={view.orderNo} total={view.total} onHome={() => navigate({ name: "list" })} />
       )}
 
       {/* ── FOOTER ──────────────────────────────────── */}
