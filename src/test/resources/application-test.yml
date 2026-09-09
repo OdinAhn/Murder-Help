@@ -1,0 +1,14 @@
+# 테스트 전용 설정: 로컬 MySQL/Redis 없이도 컨텍스트가 뜨도록 H2 인메모리 DB와
+# in-memory 캐시를 사용한다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  cache:
+    type: simple

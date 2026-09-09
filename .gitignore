@@ -38,3 +38,10 @@ out/
 
 ### Local only ###
 CLAUDE.md
+
+
+### OS ###
+.DS_Store
+
+### Frontend ###
+src/main/resources/static/

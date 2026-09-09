@@ -1,0 +1,26 @@
+spring:
+  config:
+    import: "aws-parameterstore:/murder-help/${APP_ENV:prod}/"
+  datasource:
+    url: jdbc:mysql://${AWS_RDS_HOST}:${AWS_RDS_PORT}/murder_help
+    username: ${AWS_RDS_USERNAME}
+    password: ${AWS_RDS_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${AWS_REDIS_HOST}
+      port: ${AWS_REDIS_PORT}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+aws:
+  s3:
+    bucket: murder-help-bucket
+    prefix: ${APP_ENV:prod}
+
+# JWT 설정
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 3600000  # 1시간 (ms)

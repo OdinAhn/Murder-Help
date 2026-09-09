@@ -1,0 +1,167 @@
+name: CD
+
+# develop/main 은 룰셋으로 직접 push 가 막혀 있으므로, 이 트리거는 곧 "PR 머지"를 뜻한다.
+# 머지 전 PR 에서 CI(frontend, build)가 required status check 로 강제되므로
+# 여기서 CI 완료를 따로 기다리지 않아도 검증된 코드만 배포된다.
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: cd-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: AWS 인증
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ECR 로그인
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Metadata 및 Docker 이미지 이름 설정
+        id: meta
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          IMAGE_TAG="${BRANCH}-${SHA}"
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+
+          # 도커 이미지 이름은 소문자만 허용되므로 레포 이름(Murder-Help)을 그대로 쓰면 push 가 실패한다.
+          GHCR_REPOSITORY="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+
+          echo "git_sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "ghcr_image=ghcr.io/${GHCR_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "ecr_image=${ECR_REGISTRY}/${{ vars.AWS_ECR_REPOSITORY }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: QEMU 설정
+        uses: docker/setup-qemu-action@v3
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker 이미지 빌드 및 업로드
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.ghcr_image }}
+            ${{ steps.meta.outputs.ecr_image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 배포 대상 Environment 결정
+        id: env
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          if [ "$BRANCH" = "main" ]; then
+            echo "environment=prod" >> "$GITHUB_OUTPUT"
+            echo "appenv=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=dev" >> "$GITHUB_OUTPUT"
+            echo "appenv=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: EC2 인스턴스 ID 조회
+        id: ec2
+        shell: bash
+        env:
+          PROJECT: murder-help
+          ENVIRONMENT: ${{ steps.env.outputs.environment }}
+        run: |
+          set -euo pipefail
+
+          INSTANCE_ID=$(
+            aws ec2 describe-instances \
+              --region "${{ vars.AWS_REGION }}" \
+              --filters \
+                "Name=tag:Project,Values=$PROJECT" \
+                "Name=tag:Environment,Values=$ENVIRONMENT" \
+                "Name=instance-state-name,Values=running" \
+              --query "Reservations[].Instances[].InstanceId" \
+              --output text
+          )
+
+          if [ -z "$INSTANCE_ID" ] || [ "$(echo "$INSTANCE_ID" | wc -w)" -ne 1 ]; then
+            echo "::error::Project=$PROJECT, Environment=$ENVIRONMENT 태그로 정확히 1개의 running 인스턴스를 찾지 못했습니다. (찾은 것: $INSTANCE_ID)"
+            exit 1
+          fi
+
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to EC2
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          CONTAINER_NAME: murder-help
+          INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
+          APP_ENV: ${{ steps.env.outputs.appenv }}
+        run: |
+          set -euo pipefail
+
+          ECR_URI=$ECR_REGISTRY/${{ vars.AWS_ECR_REPOSITORY }}
+          IMAGE_URI=$ECR_URI:$IMAGE_TAG
+          
+          cat > ssm-parameters.json <<EOF
+          {
+            "commands": [
+              "set -euo pipefail",
+          
+              "aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY",
+              "docker pull $IMAGE_URI",
+              "docker rm -f $CONTAINER_NAME 2>/dev/null || true",
+              "docker run -d --name $CONTAINER_NAME --restart unless-stopped -p 8080:8080 -e APP_ENV=$APP_ENV $IMAGE_URI",
+              "docker image prune -f",
+              "docker ps --filter name=$CONTAINER_NAME"
+            ]
+          }
+          EOF
+          
+          COMMAND_ID=$(
+            aws ssm send-command \
+              --region "${{ vars.AWS_REGION }}" \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Deploy ${{ env.IMAGE_TAG }}" \
+              --parameters file://ssm-parameters.json \
+              --timeout-seconds 600 \
+              --query "Command.CommandId" \
+              --output text
+          )
+
+          echo "SSM Command ID: ${COMMAND_ID}"
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"

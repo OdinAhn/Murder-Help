@@ -1,0 +1,11 @@
+.git
+.github
+.gradle
+build
+.idea
+*.iml
+README.md
+
+# frontend
+frontend/node_modules
+frontend/dist
