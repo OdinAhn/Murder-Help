@@ -3,11 +3,21 @@ name: CD
 # develop/main 은 룰셋으로 직접 push 가 막혀 있으므로, 이 트리거는 곧 "PR 머지"를 뜻한다.
 # 머지 전 PR 에서 CI(frontend, build)가 required status check 로 강제되므로
 # 여기서 CI 완료를 따로 기다리지 않아도 검증된 코드만 배포된다.
+#
+# 배포 산출물에 영향이 없는 변경(문서, 워크플로 설정 등)은 배포를 건너뛴다.
+# CI 에는 같은 필터를 넣으면 안 된다. 문서만 고친 PR 에서 체크가 보고되지 않아
+# required status check 가 영영 충족되지 않고 머지가 막힌다.
 on:
   push:
     branches:
       - develop
       - main
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -22,7 +32,9 @@ jobs:
   deploy:
     name: Deploy
 
-    runs-on: ubuntu-latest
+    # 배포 대상 EC2 가 arm64(t4g) 라 이미지도 arm64 로 빌드한다.
+    # x86 러너에서 QEMU 로 에뮬레이션하면 느리므로 arm 러너에서 네이티브로 빌드한다.
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: 소스 체크아웃
@@ -62,9 +74,6 @@ jobs:
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "ghcr_image=ghcr.io/${GHCR_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "ecr_image=${ECR_REGISTRY}/${{ vars.AWS_ECR_REPOSITORY }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: QEMU 설정
-        uses: docker/setup-qemu-action@v3
 
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@v3

@@ -68,8 +68,15 @@ jobs:
         if: always()
         run: python3 scripts/jacoco-summary.py
 
+      # 포크에서 온 PR 은 permissions 블록과 무관하게 GITHUB_TOKEN 이 읽기 전용으로
+      # 발급되므로 코멘트를 달 수 없다. 이 경우 스텝을 건너뛰어 CI 가 실패하지 않게 한다.
+      # 커버리지 수치는 jacoco-summary.py 가 GITHUB_STEP_SUMMARY 에도 쓰므로
+      # Actions 실행 요약에서 그대로 확인할 수 있다.
       - name: PR에 JaCoCo 보고서 코멘트
-        if: github.event_name == 'pull_request' && hashFiles('jacoco-comment.md') != ''
+        if: >
+          github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && hashFiles('jacoco-comment.md') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
