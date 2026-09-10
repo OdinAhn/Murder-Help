@@ -53,6 +53,43 @@ public class ProductService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<ProductResponse> searchProducts(
+            ProductTier memberTier,
+            ProductTier requestedTier,
+            String keyword,
+            ProductSort sort,
+            Pageable pageable
+    ) {
+        if (!memberTier.canAccess(requestedTier)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "접근할 수 없는 상품 등급입니다.");
+        }
+
+        String normalizedKeyword = normalizeRequiredKeyword(keyword);
+        Pageable sortedPageable = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                sort.toSort()
+        );
+
+        return PageResponse.from(
+                productRepository.searchProducts(
+                                normalizedKeyword,
+                                requestedTier,
+                                ProductStatus.DISCONTINUED,
+                                sortedPageable
+                        )
+                        .map(ProductResponse::from)
+        );
+    }
+
+    private String normalizeRequiredKeyword(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            throw new IllegalArgumentException("검색어는 필수입니다.");
+        }
+        return keyword.trim();
+    }
+
     private String normalizeRequiredCategory(String category) {
         if (category == null || category.isBlank()) {
             throw new IllegalArgumentException("카테고리는 필수입니다.");

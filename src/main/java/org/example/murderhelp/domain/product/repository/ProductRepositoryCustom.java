@@ -15,4 +15,11 @@ public interface ProductRepositoryCustom {
             ProductStatus excludedStatus,
             Pageable pageable
     );
+
+    Page<Product> searchProducts(
+            String keyword,
+            ProductTier tier,
+            ProductStatus excludedStatus,
+            Pageable pageable
+    );
 }
