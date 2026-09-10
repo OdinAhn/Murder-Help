@@ -34,6 +34,14 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
       watch: { ignored: ['**/.figma/**'] },
+      // 로컬 백엔드(./gradlew bootRun, 기본 8080 포트)로 /api 요청을 넘겨
+      // 브라우저 CORS 문제 없이 같은 출처처럼 호출한다.
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8080',
+          changeOrigin: true,
+        },
+      },
     },
     preview: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
