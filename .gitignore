@@ -1,5 +1,6 @@
 HELP.md
 .gradle
+.gradle-user/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
@@ -45,3 +46,4 @@ CLAUDE.md
 
 ### Frontend ###
 src/main/resources/static/
+/AGENTS.md
