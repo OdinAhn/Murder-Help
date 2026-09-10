@@ -37,7 +37,7 @@ public class LocalProductSecurityConfig {
     @Order(1)
     SecurityFilterChain localProductSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .securityMatcher("/api/products/**")
+                .securityMatcher("/api/products/**", "/api/v1/products/**")
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .addFilterBefore(new LocalProductTierAuthenticationFilter(), AnonymousAuthenticationFilter.class)
                 .httpBasic(Customizer.withDefaults())

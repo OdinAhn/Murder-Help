@@ -1,5 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { NAV_ITEMS, PRODUCTS, SUBCATS, type Product, type Tier } from "./catalog";
+import { NAV_ITEMS, SUBCATS, type Product, type Tier } from "./catalog";
+import { fetchProductList, searchProducts, type ApiProductSort } from "./api";
+
+const PAGE_SIZE = 12;
 
 /* ─── palette ─────────────────────────────────────────── */
 const C = {
@@ -759,7 +762,7 @@ function ProductDetail({
           </div>
 
           <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
-            {p.desc}
+            {p.desc || "상세 설명은 준비 중입니다."}
           </p>
 
           {/* 제원 */}
@@ -1366,6 +1369,106 @@ export default function App() {
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
 
+  /* ── 상품 목록/검색 (백엔드 연동) ──
+     화면에 한 번이라도 나타난 상품을 id(productCode)로 기억해 둔다.
+     장바구니 · 상세 화면은 별도 단건 조회 API가 없어 이 캐시에서 찾는다. */
+  const [productCache, setProductCache] = useState<Record<string, Product>>({});
+  const [listItems, setListItems] = useState<Product[]>([]);
+  const [listPage, setListPage] = useState(1);
+  const [listHasNext, setListHasNext] = useState(false);
+  const [listTotal, setListTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState(false);
+  const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+
+  function cacheProducts(items: Product[]) {
+    setProductCache((prev) => {
+      const next = { ...prev };
+      for (const p of items) next[p.id] = p;
+      return next;
+    });
+  }
+
+  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록) */
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const isSearching = searchKeyword.length > 0;
+
+  function requestPage(page: number) {
+    return isSearching
+      ? searchProducts({
+          keyword: searchKeyword,
+          tier: activeCodeTab,
+          sort: sortKey,
+          page,
+          size: PAGE_SIZE,
+          memberTier: userTier ?? activeCodeTab,
+        })
+      : fetchProductList({
+          category: activeNav,
+          subCategory: activeSub === "전체" ? undefined : activeSub,
+          tier: activeCodeTab,
+          sort: sortKey,
+          page,
+          size: PAGE_SIZE,
+          memberTier: userTier ?? activeCodeTab,
+        });
+  }
+
+  /* 카테고리·등급 탭·정렬·검색어가 바뀌면 1페이지부터 새로 불러온다 */
+  useEffect(() => {
+    if (!session || !userTier || view.name !== "list") return;
+
+    let cancelled = false;
+    setListLoading(true);
+    setListError(false);
+
+    requestPage(1)
+      .then((res) => {
+        if (cancelled) return;
+        setListItems(res.items);
+        setListPage(1);
+        setListHasNext(res.hasNext);
+        setListTotal(res.totalElements);
+        cacheProducts(res.items);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setListItems([]);
+        setListHasNext(false);
+        setListTotal(0);
+        setListError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
+
+  function loadMoreProducts() {
+    if (!userTier || !listHasNext || listLoading) return;
+    const nextPage = listPage + 1;
+    setListLoading(true);
+
+    requestPage(nextPage)
+      .then((res) => {
+        setListItems((prev) => [...prev, ...res.items]);
+        setListPage(nextPage);
+        setListHasNext(res.hasNext);
+        cacheProducts(res.items);
+      })
+      .finally(() => setListLoading(false));
+  }
+
   /* 로그인한 계정 앞으로만 저장한다. 로그아웃 상태에서는 담을 수 없으므로
      저장할 것도 없고, 저장된 장바구니는 다음 로그인 때까지 그대로 남는다. */
   useEffect(() => {
@@ -1412,6 +1515,7 @@ export default function App() {
     setActiveNav("Guns");
     setActiveSub("전체");
     setMenuOpen(false);
+    setSearchInput("");
     navigate({ name: "list" });
   }
 
@@ -1449,13 +1553,14 @@ export default function App() {
     setActiveNav(cat);
     setActiveSub("전체");
     setMenuOpen(false);
+    setSearchInput("");
     navigate({ name: "list" });
   }
 
   /* ── 장바구니 ── */
   const cartLines = cart
     .map((line) => {
-      const p = PRODUCTS.find((item) => item.id === line.id);
+      const p = productCache[line.id];
       return p ? { p, qty: line.qty } : null;
     })
     .filter((l): l is { p: Product; qty: number } => l !== null);
@@ -1478,7 +1583,7 @@ export default function App() {
       return false;
     }
     /* 등급이 모자라면 담을 수 없다 */
-    const p = PRODUCTS.find((item) => item.id === id);
+    const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return false;
     putInCart(id, qty);
     return true;
@@ -1508,7 +1613,7 @@ export default function App() {
       setShowLogin(true);
       return;
     }
-    const p = PRODUCTS.find((item) => item.id === id);
+    const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return;
     putInCart(id, qty);
     navigate({ name: "checkout" });
@@ -1530,16 +1635,9 @@ export default function App() {
     navigate({ name: "done", orderNo, total }, true);
   }
 
-  /* filter products: category + sub + code tab tier.
-     등급이 모자란 상품은 애초에 목록에 오르지 않는다. */
-  const filtered = PRODUCTS.filter((p) => {
-    if (p.category !== activeNav) return false;
-    if (activeSub !== "전체" && p.sub !== activeSub) return false;
-    if (p.tier !== activeCodeTab) return false;
-    return canAccess(userTier, p.tier);
-  });
-
-  const detailProduct = view.name === "detail" ? PRODUCTS.find((p) => p.id === view.id) ?? null : null;
+  /* 카테고리·등급 탭·검색 필터링은 백엔드(/api/products, /api/v1/products/search)가
+     이미 적용해서 내려준다. listItems는 그 결과를 그대로 담는다. */
+  const detailProduct = view.name === "detail" ? productCache[view.id] ?? null : null;
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -1605,8 +1703,13 @@ export default function App() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
                   <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                 </svg>
-                <input placeholder="검색..." className="bg-transparent outline-none w-20 text-xs"
-                  style={{ color: C.textDim, fontFamily: "Noto Sans KR" }} />
+                <input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="검색..."
+                  className="bg-transparent outline-none w-20 text-xs"
+                  style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}
+                />
               </div>
 
               {/* cart */}
@@ -1800,54 +1903,68 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="text-xs uppercase tracking-widest" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-                      {activeSub === "전체" ? activeNav : activeSub}
+                      {isSearching ? `검색: ${searchKeyword}` : activeSub === "전체" ? activeNav : activeSub}
                     </span>
                     <TierBadge tier={activeCodeTab} small />
                     <span
                       className="text-xs px-1.5 py-0.5"
                       style={{ background: "rgba(200,30,0,0.12)", color: C.red, fontFamily: "Share Tech Mono", border: `1px solid ${C.redDim}` }}
                     >
-                      {filtered.length}
+                      {listTotal}
                     </span>
+                    {listLoading && <Spinner color={C.textMuted} />}
                   </div>
                   <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as ApiProductSort)}
                     className="text-[10px] uppercase tracking-wider px-2 py-1 outline-none"
                     style={{ background: "rgba(0,0,0,0.5)", color: C.textMuted, border: `1px solid ${C.panelBorder}`, fontFamily: "Share Tech Mono" }}
                   >
-                    <option>POPULAR</option>
-                    <option>PRICE ↑</option>
-                    <option>PRICE ↓</option>
-                    <option>NEWEST</option>
+                    <option value="POPULAR">POPULAR</option>
+                    <option value="PRICE_ASC">PRICE ↑</option>
+                    <option value="PRICE_DESC">PRICE ↓</option>
+                    <option value="NEWEST">NEWEST</option>
                   </select>
                 </div>
 
                 {/* grid */}
-                {filtered.length > 0 ? (
+                {listError ? (
+                  <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
+                    <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
+                      LOAD FAILED
+                    </div>
+                    <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
+                      // 상품을 불러오지 못했습니다. 백엔드 서버 상태를 확인해 주세요.
+                    </div>
+                  </div>
+                ) : listItems.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {filtered.map((p) => (
+                    {listItems.map((p) => (
                       <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
                     ))}
                   </div>
-                ) : (
+                ) : !listLoading ? (
                   <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
                     <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
                       NO ITEMS
                     </div>
                     <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-                      // {activeSub} — {TIERS[activeCodeTab].label} 등급 아이템 없음
+                      // {isSearching ? `"${searchKeyword}"` : activeSub} — {TIERS[activeCodeTab].label} 등급 아이템 없음
                     </div>
                   </div>
-                )}
+                ) : null}
 
-                {filtered.length > 0 && (
+                {listHasNext && (
                   <div className="text-center mt-8">
                     <button
+                      onClick={loadMoreProducts}
+                      disabled={listLoading}
                       className="px-10 py-2.5 text-xs font-bold uppercase tracking-widest transition-all"
-                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono" }}
+                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono", cursor: listLoading ? "wait" : "pointer" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.red; (e.currentTarget as HTMLButtonElement).style.color = C.text; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.panelBorder; (e.currentTarget as HTMLButtonElement).style.color = C.textDim; }}
                     >
-                      더 보기 →
+                      {listLoading ? "불러오는 중…" : "더 보기 →"}
                     </button>
                   </div>
                 )}

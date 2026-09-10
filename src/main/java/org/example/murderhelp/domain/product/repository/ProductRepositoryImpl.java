@@ -71,6 +71,48 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         );
     }
 
+    @Override
+    public Page<Product> searchProducts(
+            String keyword,
+            ProductTier tier,
+            ProductStatus excludedStatus,
+            Pageable pageable
+    ) {
+        List<Product> products = queryFactory
+                .selectFrom(product)
+                .join(product.category, category).fetchJoin()
+                .join(category.parent, parentCategory).fetchJoin()
+                .where(
+                        product.name.contains(keyword),
+                        product.tier.eq(tier),
+                        product.status.ne(excludedStatus)
+                )
+                .orderBy(toOrderSpecifiers(pageable.getSort()))
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(product.count())
+                .from(product)
+                .join(product.category, category)
+                .join(category.parent, parentCategory)
+                .where(
+                        product.name.contains(keyword),
+                        product.tier.eq(tier),
+                        product.status.ne(excludedStatus)
+                );
+
+        return PageableExecutionUtils.getPage(
+                products,
+                pageable,
+                () -> {
+                    Long count = countQuery.fetchOne();
+                    return count == null ? 0L : count;
+                }
+        );
+    }
+
     private BooleanExpression subCategoryEq(String subCategoryName) {
         return subCategoryName == null ? null : category.name.eq(subCategoryName);
     }
