@@ -156,6 +156,46 @@ async function fetchProductPage({
   return body.data;
 }
 
+/* 상품명 검색 (v2 — Caffeine 캐시 적용). 카테고리/서브카테고리 없이 키워드로만 찾는다. */
+async function searchProductPage({
+  keyword,
+  tier,
+  memberTier,
+  sort,
+  page,
+  signal,
+}: {
+  keyword: string;
+  tier: Tier;
+  memberTier: Tier;
+  sort: ProductSort;
+  page: number;
+  signal: AbortSignal;
+}): Promise<ProductPage> {
+  const params = new URLSearchParams({
+    keyword,
+    tier,
+    sort,
+    page: String(page),
+    size: String(PRODUCT_PAGE_SIZE),
+  });
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (import.meta.env.DEV) headers["X-Product-Tier"] = memberTier.toUpperCase();
+
+  const response = await fetch(`/api/v2/products/search?${params.toString()}`, {
+    headers,
+    credentials: "include",
+    signal,
+  });
+
+  const body = await response.json().catch(() => null) as ProductApiResponse | null;
+  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
+    throw new Error(body?.message ?? "상품 검색에 실패했습니다.");
+  }
+  return body.data;
+}
+
 /* ─── demo accounts ──────────────────────────────────────── */
 /* 백엔드가 붙기 전까지 계정은 여기에 있다. 회원가입으로 만든 계정도
    들어가지만 새로고침하면 사라진다 — 비밀번호를 브라우저에 저장하지
@@ -1460,6 +1500,9 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("Guns");
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const isSearching = searchKeyword.length > 0;
   const [products, setProducts] = useState<Product[]>([]);
   const [knownProducts, setKnownProducts] = useState<Product[]>([]);
   const [productSort, setProductSort] = useState<ProductSort>("POPULAR");
@@ -1482,15 +1525,26 @@ export default function App() {
     setProductsLoading(true);
     setProductsError(null);
 
-    fetchProductPage({
-      category: activeNav,
-      subCategory: activeSub,
-      tier: activeCodeTab,
-      memberTier: userTier,
-      sort: productSort,
-      page: productPage,
-      signal: controller.signal,
-    })
+    const request = isSearching
+      ? searchProductPage({
+          keyword: searchKeyword,
+          tier: activeCodeTab,
+          memberTier: userTier,
+          sort: productSort,
+          page: productPage,
+          signal: controller.signal,
+        })
+      : fetchProductPage({
+          category: activeNav,
+          subCategory: activeSub,
+          tier: activeCodeTab,
+          memberTier: userTier,
+          sort: productSort,
+          page: productPage,
+          signal: controller.signal,
+        });
+
+    request
       .then((result) => {
         const received = result.items.map(toProduct);
         setProducts((current) => productPage === 1 ? received : mergeProducts(current, received));
@@ -1500,114 +1554,28 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setProductsError(error instanceof Error ? error.message : "상품 목록을 불러오지 못했습니다.");
+        setProductsError(error instanceof Error ? error.message : (isSearching ? "상품 검색에 실패했습니다." : "상품 목록을 불러오지 못했습니다."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setProductsLoading(false);
       });
 
     return () => controller.abort();
-  }, [session, userTier, activeNav, activeSub, activeCodeTab, productSort, productPage, productReloadKey]);
+  }, [session, userTier, activeNav, activeSub, activeCodeTab, productSort, productPage, productReloadKey, isSearching, searchKeyword]);
 
-  /* ── 상품 목록/검색 (백엔드 연동) ──
-     화면에 한 번이라도 나타난 상품을 id(productCode)로 기억해 둔다.
-     장바구니 · 상세 화면은 별도 단건 조회 API가 없어 이 캐시에서 찾는다. */
-  const [productCache, setProductCache] = useState<Record<string, Product>>({});
-  const [listItems, setListItems] = useState<Product[]>([]);
-  const [listPage, setListPage] = useState(1);
-  const [listHasNext, setListHasNext] = useState(false);
-  const [listTotal, setListTotal] = useState(0);
-  const [listLoading, setListLoading] = useState(false);
-  const [listError, setListError] = useState(false);
-  const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
-  const [searchInput, setSearchInput] = useState("");
-  const [searchKeyword, setSearchKeyword] = useState("");
-
-  function cacheProducts(items: Product[]) {
-    setProductCache((prev) => {
-      const next = { ...prev };
-      for (const p of items) next[p.id] = p;
-      return next;
-    });
-  }
-
-  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록) */
+  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록).
+     검색어가 바뀌면 카테고리/등급 변경과 같은 방식으로 1페이지부터 새로 불러온다. */
   useEffect(() => {
-    const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
+    const timer = window.setTimeout(() => {
+      const trimmed = searchInput.trim();
+      if (trimmed === searchKeyword) return;
+      setSearchKeyword(trimmed);
+      resetProductList();
+    }, 300);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  const isSearching = searchKeyword.length > 0;
-
-  function requestPage(page: number) {
-    return isSearching
-      ? searchProducts({
-          keyword: searchKeyword,
-          tier: activeCodeTab,
-          sort: sortKey,
-          page,
-          size: PAGE_SIZE,
-          memberTier: userTier ?? activeCodeTab,
-        })
-      : fetchProductList({
-          category: activeNav,
-          subCategory: activeSub === "전체" ? undefined : activeSub,
-          tier: activeCodeTab,
-          sort: sortKey,
-          page,
-          size: PAGE_SIZE,
-          memberTier: userTier ?? activeCodeTab,
-        });
-  }
-
-  /* 카테고리·등급 탭·정렬·검색어가 바뀌면 1페이지부터 새로 불러온다 */
-  useEffect(() => {
-    if (!session || !userTier || view.name !== "list") return;
-
-    let cancelled = false;
-    setListLoading(true);
-    setListError(false);
-
-    requestPage(1)
-      .then((res) => {
-        if (cancelled) return;
-        setListItems(res.items);
-        setListPage(1);
-        setListHasNext(res.hasNext);
-        setListTotal(res.totalElements);
-        cacheProducts(res.items);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setListItems([]);
-        setListHasNext(false);
-        setListTotal(0);
-        setListError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setListLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
-
-  function loadMoreProducts() {
-    if (!userTier || !listHasNext || listLoading) return;
-    const nextPage = listPage + 1;
-    setListLoading(true);
-
-    requestPage(nextPage)
-      .then((res) => {
-        setListItems((prev) => [...prev, ...res.items]);
-        setListPage(nextPage);
-        setListHasNext(res.hasNext);
-        cacheProducts(res.items);
-      })
-      .finally(() => setListLoading(false));
-  }
 
   /* 로그인한 계정 앞으로만 저장한다. 로그아웃 상태에서는 담을 수 없으므로
      저장할 것도 없고, 저장된 장바구니는 다음 로그인 때까지 그대로 남는다. */
@@ -1655,6 +1623,8 @@ export default function App() {
     setActiveNav("Guns");
     setActiveSub("전체");
     setMenuOpen(false);
+    setSearchInput("");
+    setSearchKeyword("");
     resetProductList();
     navigate({ name: "list" });
   }
@@ -1703,6 +1673,8 @@ export default function App() {
     setActiveNav(cat);
     setActiveSub("전체");
     setMenuOpen(false);
+    setSearchInput("");
+    setSearchKeyword("");
     resetProductList();
     navigate({ name: "list" });
   }
@@ -2078,7 +2050,7 @@ export default function App() {
                     >
                       {productTotal}
                     </span>
-                    {listLoading && <Spinner color={C.textMuted} />}
+                    {productsLoading && <Spinner color={C.textMuted} />}
                   </div>
                   <select
                     value={productSort}
@@ -2112,11 +2084,11 @@ export default function App() {
                   </div>
                 ) : filtered.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {listItems.map((p) => (
+                    {filtered.map((p) => (
                       <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
                     ))}
                   </div>
-                ) : !listLoading ? (
+                ) : !productsLoading ? (
                   <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
                     <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
                       NO ITEMS
