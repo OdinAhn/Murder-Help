@@ -1,10 +1,12 @@
 package org.example.murderhelp.domain.product.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.murderhelp.domain.product.dto.ProductDetailResponse;
 import org.example.murderhelp.domain.product.dto.ProductResponse;
 import org.example.murderhelp.domain.product.dto.ProductSort;
 import org.example.murderhelp.domain.product.entity.ProductStatus;
 import org.example.murderhelp.domain.product.entity.ProductTier;
+import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.product.repository.ProductRepository;
 import org.example.murderhelp.global.config.cache.LocalCacheConfig;
 import org.example.murderhelp.global.error.BusinessException;
@@ -21,6 +23,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductService {
 
     private final ProductRepository productRepository;
+
+    @Transactional(readOnly = true)
+    public ProductDetailResponse getProduct(ProductTier memberTier, Long productId) {
+        Product product = productRepository
+                .findProductDetail(productId, ProductStatus.DISCONTINUED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+
+        if (!memberTier.canAccess(product.getTier())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "접근할 수 없는 상품 등급입니다.");
+        }
+
+        return ProductDetailResponse.from(product);
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> getProducts(

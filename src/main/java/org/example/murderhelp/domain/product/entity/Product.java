@@ -6,6 +6,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.murderhelp.domain.product.service.ProductTierConverter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Entity
 @Table(name = "products")
 @Getter
@@ -46,6 +49,10 @@ public class Product {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private ProductStatus status;
+
+    @OneToMany(mappedBy = "product", fetch = FetchType.LAZY)
+    @OrderBy("sortOrder ASC")
+    private List<ProductSpec> specs = new ArrayList<>();
 
     public void decreaseStock(int quantity) {
         if (quantity <= 0) {

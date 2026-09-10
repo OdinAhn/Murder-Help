@@ -48,6 +48,83 @@ class ProductControllerTest {
         insertProduct(105L, "P005", 11L, "Discontinued Purple Pistol", 1_100L, "purple", "DISCONTINUED");
         insertProduct(106L, "P006", 11L, "Sold Out Purple Pistol", 1_500L, "purple", "SOLD_OUT");
         insertProduct(107L, "P007", 21L, "Purple Knife", 1_700L, "purple", "ON_SALE");
+
+        insertProductSpec(1001L, 101L, "구성품", "본체 · 탄창 1개", 2);
+        insertProductSpec(1002L, 101L, "발사 방식", "가스 블로우백", 1);
+    }
+
+    @Test
+    void 상품_ID로_상세_정보와_정렬된_제원을_조회한다() throws Exception {
+        mockMvc.perform(
+                        get("/api/products/101")
+                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.id").value(101))
+                .andExpect(jsonPath("$.data.productCode").value("P001"))
+                .andExpect(jsonPath("$.data.name").value("Purple Pistol"))
+                .andExpect(jsonPath("$.data.description").value("Purple Pistol description"))
+                .andExpect(jsonPath("$.data.category").value("Guns"))
+                .andExpect(jsonPath("$.data.subCategory").value("Pistol"))
+                .andExpect(jsonPath("$.data.price").value(2_000))
+                .andExpect(jsonPath("$.data.stockQuantity").value(10))
+                .andExpect(jsonPath("$.data.tier").value("purple"))
+                .andExpect(jsonPath("$.data.imageUrl").value("https://example.com/P001.jpg"))
+                .andExpect(jsonPath("$.data.status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.specs.length()").value(2))
+                .andExpect(jsonPath("$.data.specs[0].name").value("발사 방식"))
+                .andExpect(jsonPath("$.data.specs[0].value").value("가스 블로우백"))
+                .andExpect(jsonPath("$.data.specs[0].sortOrder").value(1))
+                .andExpect(jsonPath("$.data.specs[1].name").value("구성품"));
+    }
+
+    @Test
+    void 자기_등급보다_높은_상품의_상세_조회는_거부한다() throws Exception {
+        mockMvc.perform(
+                        get("/api/products/101")
+                                .with(user("yellow-member").authorities(() -> "YELLOW"))
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_002"))
+                .andExpect(jsonPath("$.message").value("접근할 수 없는 상품 등급입니다."));
+    }
+
+    @Test
+    void 존재하지_않는_상품의_상세_조회는_404를_반환한다() throws Exception {
+        mockMvc.perform(
+                        get("/api/products/999")
+                                .with(user("red-member").authorities(() -> "RED"))
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PRODUCT_001"));
+    }
+
+    @Test
+    void 판매_중단된_상품의_상세_조회는_404를_반환한다() throws Exception {
+        mockMvc.perform(
+                        get("/api/products/105")
+                                .with(user("red-member").authorities(() -> "RED"))
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PRODUCT_001"));
+    }
+
+    @Test
+    void 품절_상품의_상세_정보는_조회할_수_있다() throws Exception {
+        mockMvc.perform(
+                        get("/api/products/106")
+                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SOLD_OUT"))
+                .andExpect(jsonPath("$.data.stockQuantity").value(0));
+    }
+
+    @Test
+    void 인증하지_않은_사용자는_상품_상세를_조회할_수_없다() throws Exception {
+        mockMvc.perform(get("/api/products/101"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -217,6 +294,27 @@ class ProductControllerTest {
                 status.equals("SOLD_OUT") ? 0 : 10,
                 tier,
                 status
+        );
+    }
+
+    private void insertProductSpec(
+            Long id,
+            Long productId,
+            String name,
+            String value,
+            int sortOrder
+    ) {
+        jdbcTemplate.update(
+                """
+                        insert into product_specs (
+                            id, product_id, spec_name, spec_value, sort_order
+                        ) values (?, ?, ?, ?, ?)
+                        """,
+                id,
+                productId,
+                name,
+                value,
+                sortOrder
         );
     }
 }

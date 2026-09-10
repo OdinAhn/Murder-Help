@@ -1,6 +1,7 @@
 package org.example.murderhelp.domain.product.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.murderhelp.domain.product.dto.ProductDetailResponse;
 import org.example.murderhelp.domain.product.dto.ProductResponse;
 import org.example.murderhelp.domain.product.dto.ProductSort;
 import org.example.murderhelp.domain.product.entity.ProductTier;
@@ -11,6 +12,7 @@ import org.example.murderhelp.global.response.PageResponse;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,6 +22,15 @@ public class ProductController {
 
     private final ProductService productService;
     private final ProductTierAuthorityResolver productTierAuthorityResolver;
+
+    @GetMapping("/api/products/{productId}")
+    public ApiResponse<ProductDetailResponse> getProduct(
+            Authentication authentication,
+            @PathVariable Long productId
+    ) {
+        ProductTier memberTier = productTierAuthorityResolver.resolve(authentication);
+        return ApiResponse.ok(productService.getProduct(memberTier, productId));
+    }
 
     @GetMapping("/api/products")
     public ApiResponse<PageResponse<ProductResponse>> getProducts(

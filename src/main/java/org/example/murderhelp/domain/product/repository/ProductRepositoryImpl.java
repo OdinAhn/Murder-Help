@@ -10,12 +10,14 @@ import org.example.murderhelp.domain.product.entity.ProductStatus;
 import org.example.murderhelp.domain.product.entity.ProductTier;
 import org.example.murderhelp.domain.product.entity.QCategory;
 import org.example.murderhelp.domain.product.entity.QProduct;
+import org.example.murderhelp.domain.product.entity.QProductSpec;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.support.PageableExecutionUtils;
 
 import java.util.List;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 public class ProductRepositoryImpl implements ProductRepositoryCustom {
@@ -23,8 +25,26 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     private final QProduct product = QProduct.product;
+    private final QProductSpec productSpec = QProductSpec.productSpec;
     private final QCategory category = new QCategory("productCategory");
     private final QCategory parentCategory = new QCategory("parentCategory");
+
+    @Override
+    public Optional<Product> findProductDetail(Long productId, ProductStatus excludedStatus) {
+        return queryFactory
+                .selectFrom(product)
+                .join(product.category, category).fetchJoin()
+                .join(category.parent, parentCategory).fetchJoin()
+                .leftJoin(product.specs, productSpec).fetchJoin()
+                .where(
+                        product.id.eq(productId),
+                        product.status.ne(excludedStatus)
+                )
+                .distinct()
+                .fetch()
+                .stream()
+                .findFirst();
+    }
 
     @Override
     public Page<Product> findProducts(
