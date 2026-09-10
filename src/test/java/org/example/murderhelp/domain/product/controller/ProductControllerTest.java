@@ -71,6 +71,8 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.hasNext").value(true))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].productCode").value("P006"))
+                .andExpect(jsonPath("$.data.items[0].description").value("Sold Out Purple Pistol description"))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value("https://example.com/P006.jpg"))
                 .andExpect(jsonPath("$.data.items[0].category").value("Guns"))
                 .andExpect(jsonPath("$.data.items[0].subCategory").value("Pistol"))
                 .andExpect(jsonPath("$.data.items[0].tier").value("purple"))

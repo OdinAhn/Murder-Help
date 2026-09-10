@@ -1,8 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NAV_ITEMS, SUBCATS, type Product, type Tier } from "./catalog";
-import { fetchProductList, searchProducts, type ApiProductSort } from "./api";
-
-const PAGE_SIZE = 12;
 
 /* ─── palette ─────────────────────────────────────────── */
 const C = {
@@ -62,6 +59,101 @@ const TIER_RANK: Record<Tier, number> = { yellow: 0, purple: 1, red: 2 };
 function canAccess(userTier: Tier | null, productTier: Tier) {
   if (!userTier) return false;
   return TIER_RANK[productTier] <= TIER_RANK[userTier];
+}
+
+type ProductSort = "POPULAR" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST";
+
+type ProductApiItem = {
+  id: number;
+  productCode: string;
+  name: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  price: number;
+  tier: Tier;
+  imageUrl: string;
+  status: "ON_SALE" | "SOLD_OUT";
+};
+
+type ProductPage = {
+  items: ProductApiItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+};
+
+type ProductApiResponse = {
+  code: string;
+  message?: string;
+  data?: ProductPage;
+};
+
+const PRODUCT_PAGE_SIZE = 18;
+
+function mergeProducts(current: Product[], incoming: Product[]) {
+  const merged = new Map(current.map((product) => [product.id, product]));
+  incoming.forEach((product) => merged.set(product.id, product));
+  return Array.from(merged.values());
+}
+
+function toProduct(item: ProductApiItem): Product {
+  return {
+    id: String(item.id),
+    name: item.name,
+    category: item.category,
+    sub: item.subCategory,
+    price: item.price,
+    tier: item.tier,
+    img: item.imageUrl,
+    desc: item.description,
+    specs: [],
+  };
+}
+
+async function fetchProductPage({
+  category,
+  subCategory,
+  tier,
+  memberTier,
+  sort,
+  page,
+  signal,
+}: {
+  category: string;
+  subCategory: string;
+  tier: Tier;
+  memberTier: Tier;
+  sort: ProductSort;
+  page: number;
+  signal: AbortSignal;
+}): Promise<ProductPage> {
+  const params = new URLSearchParams({
+    category,
+    tier,
+    sort,
+    page: String(page),
+    size: String(PRODUCT_PAGE_SIZE),
+  });
+
+  if (subCategory !== "전체") params.set("subCategory", subCategory);
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (import.meta.env.DEV) headers["X-Product-Tier"] = memberTier.toUpperCase();
+
+  const response = await fetch(`/api/products?${params.toString()}`, {
+    headers,
+    credentials: "include",
+    signal,
+  });
+
+  const body = await response.json().catch(() => null) as ProductApiResponse | null;
+  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
+    throw new Error(body?.message ?? "상품 목록을 불러오지 못했습니다.");
+  }
+  return body.data;
 }
 
 /* ─── demo accounts ──────────────────────────────────────── */
@@ -1368,6 +1460,54 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("Guns");
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [knownProducts, setKnownProducts] = useState<Product[]>([]);
+  const [productSort, setProductSort] = useState<ProductSort>("POPULAR");
+  const [productPage, setProductPage] = useState(1);
+  const [productTotal, setProductTotal] = useState(0);
+  const [hasNextProducts, setHasNextProducts] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [productReloadKey, setProductReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!session || !userTier) {
+      setProducts([]);
+      setProductTotal(0);
+      setHasNextProducts(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setProductsLoading(true);
+    setProductsError(null);
+
+    fetchProductPage({
+      category: activeNav,
+      subCategory: activeSub,
+      tier: activeCodeTab,
+      memberTier: userTier,
+      sort: productSort,
+      page: productPage,
+      signal: controller.signal,
+    })
+      .then((result) => {
+        const received = result.items.map(toProduct);
+        setProducts((current) => productPage === 1 ? received : mergeProducts(current, received));
+        setKnownProducts((current) => mergeProducts(current, received));
+        setProductTotal(result.totalElements);
+        setHasNextProducts(result.hasNext);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setProductsError(error instanceof Error ? error.message : "상품 목록을 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProductsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [session, userTier, activeNav, activeSub, activeCodeTab, productSort, productPage, productReloadKey]);
 
   /* ── 상품 목록/검색 (백엔드 연동) ──
      화면에 한 번이라도 나타난 상품을 id(productCode)로 기억해 둔다.
@@ -1515,13 +1655,21 @@ export default function App() {
     setActiveNav("Guns");
     setActiveSub("전체");
     setMenuOpen(false);
-    setSearchInput("");
+    resetProductList();
     navigate({ name: "list" });
+  }
+
+  function resetProductList() {
+    setProductPage(1);
+    setProducts([]);
+    setProductTotal(0);
+    setHasNextProducts(false);
   }
 
   function handleLogin(id: string, spent: number) {
     setSession({ id, spent });
     setActiveCodeTab(tierFor(spent));
+    resetProductList();
     setShowLogin(false);
 
     /* 이 계정이 지난번에 담아둔 장바구니를 되살린다 */
@@ -1546,6 +1694,8 @@ export default function App() {
     setActiveCodeTab("red");
     /* 화면에서만 비운다. 저장된 장바구니는 다음 로그인 때 돌아온다 */
     setCart([]);
+    setProducts([]);
+    setKnownProducts([]);
     navigate({ name: "list" });
   }
 
@@ -1553,14 +1703,29 @@ export default function App() {
     setActiveNav(cat);
     setActiveSub("전체");
     setMenuOpen(false);
-    setSearchInput("");
+    resetProductList();
     navigate({ name: "list" });
+  }
+
+  function changeSubCategory(subCategory: string) {
+    setActiveSub(subCategory);
+    resetProductList();
+  }
+
+  function changeTier(tier: Tier) {
+    setActiveCodeTab(tier);
+    resetProductList();
+  }
+
+  function changeProductSort(sort: ProductSort) {
+    setProductSort(sort);
+    resetProductList();
   }
 
   /* ── 장바구니 ── */
   const cartLines = cart
     .map((line) => {
-      const p = productCache[line.id];
+      const p = knownProducts.find((item) => item.id === line.id);
       return p ? { p, qty: line.qty } : null;
     })
     .filter((l): l is { p: Product; qty: number } => l !== null);
@@ -1583,7 +1748,7 @@ export default function App() {
       return false;
     }
     /* 등급이 모자라면 담을 수 없다 */
-    const p = productCache[id];
+    const p = knownProducts.find((item) => item.id === id);
     if (!p || !canAccess(userTier, p.tier)) return false;
     putInCart(id, qty);
     return true;
@@ -1613,7 +1778,7 @@ export default function App() {
       setShowLogin(true);
       return;
     }
-    const p = productCache[id];
+    const p = knownProducts.find((item) => item.id === id);
     if (!p || !canAccess(userTier, p.tier)) return;
     putInCart(id, qty);
     navigate({ name: "checkout" });
@@ -1635,9 +1800,10 @@ export default function App() {
     navigate({ name: "done", orderNo, total }, true);
   }
 
-  /* 카테고리·등급 탭·검색 필터링은 백엔드(/api/products, /api/v1/products/search)가
-     이미 적용해서 내려준다. listItems는 그 결과를 그대로 담는다. */
-  const detailProduct = view.name === "detail" ? productCache[view.id] ?? null : null;
+  /* 카테고리, 서브 카테고리, 등급, 정렬 조건은 백엔드가 적용한다. */
+  const filtered = products;
+
+  const detailProduct = view.name === "detail" ? knownProducts.find((p) => p.id === view.id) ?? null : null;
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -1817,7 +1983,7 @@ export default function App() {
                 tier={tier}
                 active={activeCodeTab === tier}
                 userTier={userTier}
-                onClick={() => setActiveCodeTab(tier)}
+                onClick={() => changeTier(tier)}
               />
             ))}
           </div>
@@ -1879,13 +2045,13 @@ export default function App() {
           {/* ── MAIN ────────────────────────────────────── */}
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6">
             <div className="flex gap-0" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-              <Sidebar category={activeNav} activeSub={activeSub} onSub={setActiveSub} />
+              <Sidebar category={activeNav} activeSub={activeSub} onSub={changeSubCategory} />
 
               <div className="flex-1 p-5">
                 {/* mobile subcats */}
                 <div className="flex md:hidden gap-2 flex-wrap mb-4">
                   {(SUBCATS[activeNav] ?? []).map((s) => (
-                    <button key={s} onClick={() => setActiveSub(s)}
+                    <button key={s} onClick={() => changeSubCategory(s)}
                       className="text-[10px] uppercase tracking-widest px-2.5 py-1 transition-all"
                       style={{
                         fontFamily: "Share Tech Mono",
@@ -1910,13 +2076,13 @@ export default function App() {
                       className="text-xs px-1.5 py-0.5"
                       style={{ background: "rgba(200,30,0,0.12)", color: C.red, fontFamily: "Share Tech Mono", border: `1px solid ${C.redDim}` }}
                     >
-                      {listTotal}
+                      {productTotal}
                     </span>
                     {listLoading && <Spinner color={C.textMuted} />}
                   </div>
                   <select
-                    value={sortKey}
-                    onChange={(e) => setSortKey(e.target.value as ApiProductSort)}
+                    value={productSort}
+                    onChange={(event) => changeProductSort(event.target.value as ProductSort)}
                     className="text-[10px] uppercase tracking-wider px-2 py-1 outline-none"
                     style={{ background: "rgba(0,0,0,0.5)", color: C.textMuted, border: `1px solid ${C.panelBorder}`, fontFamily: "Share Tech Mono" }}
                   >
@@ -1928,16 +2094,23 @@ export default function App() {
                 </div>
 
                 {/* grid */}
-                {listError ? (
-                  <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
-                    <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
-                      LOAD FAILED
-                    </div>
-                    <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-                      // 상품을 불러오지 못했습니다. 백엔드 서버 상태를 확인해 주세요.
-                    </div>
+                {productsLoading && filtered.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 py-16" style={{ border: `1px dashed ${C.panelBorder}`, color: C.textDim }}>
+                    <Spinner color={C.redBright} />
+                    <span className="text-xs" style={{ fontFamily: "Share Tech Mono" }}>상품을 불러오는 중...</span>
                   </div>
-                ) : listItems.length > 0 ? (
+                ) : productsError && filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4" style={{ border: `1px dashed ${C.panelBorder}` }}>
+                    <div className="text-sm" style={{ color: C.redBright, fontFamily: "Noto Sans KR" }}>{productsError}</div>
+                    <button
+                      onClick={() => setProductReloadKey((key) => key + 1)}
+                      className="px-6 py-2 text-xs font-bold uppercase tracking-widest"
+                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono" }}
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                ) : filtered.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {listItems.map((p) => (
                       <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
@@ -1954,17 +2127,26 @@ export default function App() {
                   </div>
                 ) : null}
 
-                {listHasNext && (
+                {productsError && filtered.length > 0 && (
+                  <div className="text-center mt-5 text-xs" style={{ color: C.redBright, fontFamily: "Noto Sans KR" }}>
+                    {productsError}{" "}
+                    <button onClick={() => setProductReloadKey((key) => key + 1)} style={{ color: C.text, textDecoration: "underline" }}>
+                      다시 시도
+                    </button>
+                  </div>
+                )}
+
+                {filtered.length > 0 && hasNextProducts && !productsError && (
                   <div className="text-center mt-8">
                     <button
-                      onClick={loadMoreProducts}
-                      disabled={listLoading}
+                      onClick={() => setProductPage((current) => current + 1)}
+                      disabled={productsLoading}
                       className="px-10 py-2.5 text-xs font-bold uppercase tracking-widest transition-all"
-                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono", cursor: listLoading ? "wait" : "pointer" }}
+                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono", cursor: productsLoading ? "wait" : "pointer" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.red; (e.currentTarget as HTMLButtonElement).style.color = C.text; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.panelBorder; (e.currentTarget as HTMLButtonElement).style.color = C.textDim; }}
                     >
-                      {listLoading ? "불러오는 중…" : "더 보기 →"}
+                      {productsLoading ? <><Spinner color={C.textDim} /> 불러오는 중...</> : "더 보기 →"}
                     </button>
                   </div>
                 )}
