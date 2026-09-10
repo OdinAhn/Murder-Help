@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.murderhelp.domain.product.service.ProductTierConverter;
 
 @Entity
 @Table(name = "products")

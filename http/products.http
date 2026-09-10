@@ -1,0 +1,97 @@
+### 실행 전 확인
+# 1. application.yml의 로컬 MySQL(killer_mall)에 조회할 상품 데이터가 있어야 합니다.
+# 2. local 프로필로 애플리케이션을 실행합니다. (현재 application.yml 기본 프로필이 local입니다.)
+# 3. X-Product-Tier는 로그인 기능 완성 전 로컬 검증에만 사용하는 임시 인증 헤더입니다.
+#    local 프로필 이외에서는 이 헤더가 인증 정보로 사용되지 않습니다.
+
+@host = http://localhost:8080
+@memberTier = RED
+@category = Guns
+@subCategory = Pistol
+
+### 1. 대분류 + 소분류 + 등급 필터 및 가격 오름차순 검증
+GET {{host}}/api/products?category={{category}}&subCategory={{subCategory}}&tier=yellow&sort=PRICE_ASC&page=1&size=20
+Accept: application/json
+X-Product-Tier: {{memberTier}}
+
+> {%
+    client.test("상품 필터 조회에 성공한다", function () {
+        client.assert(response.status === 200, "HTTP 상태가 200이 아닙니다.");
+        client.assert(response.body.code === "SUCCESS", "응답 코드가 SUCCESS가 아닙니다.");
+        client.assert(response.body.data.items.length > 0, "MySQL 조회 결과가 비어 있습니다.");
+    });
+
+    client.test("모든 상품이 요청한 필터 조건과 일치한다", function () {
+        const items = response.body.data.items;
+        items.forEach(function (item) {
+            client.assert(item.category === "Guns", "다른 대분류 상품이 포함되었습니다: " + item.productCode);
+            client.assert(item.subCategory === "Pistol", "다른 소분류 상품이 포함되었습니다: " + item.productCode);
+            client.assert(item.tier === "yellow", "다른 등급 상품이 포함되었습니다: " + item.productCode);
+            client.assert(item.status !== "DISCONTINUED", "판매 중단 상품이 포함되었습니다: " + item.productCode);
+        });
+    });
+
+    client.test("가격이 오름차순으로 정렬된다", function () {
+        const items = response.body.data.items;
+        for (let i = 1; i < items.length; i++) {
+            client.assert(items[i - 1].price <= items[i].price, "가격 오름차순 정렬이 아닙니다.");
+        }
+    });
+%}
+
+### 2. 소분류를 생략하면 대분류 전체에서 조회되는지 검증
+GET {{host}}/api/products?category={{category}}&tier=purple&sort=POPULAR&page=1&size=50
+Accept: application/json
+X-Product-Tier: {{memberTier}}
+
+> {%
+    client.test("대분류 전체의 purple 상품을 조회한다", function () {
+        client.assert(response.status === 200, "HTTP 상태가 200이 아닙니다.");
+        client.assert(response.body.data.items.length > 0, "MySQL 조회 결과가 비어 있습니다.");
+
+        response.body.data.items.forEach(function (item) {
+            client.assert(item.category === "Guns", "다른 대분류 상품이 포함되었습니다: " + item.productCode);
+            client.assert(item.tier === "purple", "다른 등급 상품이 포함되었습니다: " + item.productCode);
+            client.assert(item.status !== "DISCONTINUED", "판매 중단 상품이 포함되었습니다: " + item.productCode);
+        });
+    });
+%}
+
+### 3. RED 회원이 하위 등급인 PURPLE 탭을 조회할 수 있는지 검증
+GET {{host}}/api/products?category={{category}}&subCategory={{subCategory}}&tier=purple&sort=PRICE_DESC&page=1&size=20
+Accept: application/json
+X-Product-Tier: RED
+
+> {%
+    client.test("상위 등급 회원은 하위 등급 상품을 조회할 수 있다", function () {
+        client.assert(response.status === 200, "RED 회원의 PURPLE 상품 조회가 거부되었습니다.");
+        client.assert(response.body.data.items.length > 0, "MySQL 조회 결과가 비어 있습니다.");
+
+        const items = response.body.data.items;
+        for (let i = 1; i < items.length; i++) {
+            client.assert(items[i - 1].price >= items[i].price, "가격 내림차순 정렬이 아닙니다.");
+        }
+    });
+%}
+
+### 4. YELLOW 회원이 상위 등급인 RED 탭을 조회하면 403인지 검증
+GET {{host}}/api/products?category={{category}}&subCategory={{subCategory}}&tier=red&page=1&size=20
+Accept: application/json
+X-Product-Tier: YELLOW
+
+> {%
+    client.test("자기 등급보다 높은 상품 조회를 거부한다", function () {
+        client.assert(response.status === 403, "HTTP 상태가 403이 아닙니다.");
+        client.assert(response.body.code === "AUTH_002", "권한 오류 코드가 AUTH_002가 아닙니다.");
+    });
+%}
+
+### 5. 인증 헤더가 없으면 401인지 검증
+GET {{host}}/api/products?category={{category}}&tier=yellow&page=1&size=20
+Accept: application/json
+
+> {%
+    client.test("인증하지 않은 상품 조회를 거부한다", function () {
+        client.assert(response.status === 401, "HTTP 상태가 401이 아닙니다.");
+    });
+%}
