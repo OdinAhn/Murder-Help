@@ -16,8 +16,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     SELECT o FROM Order o
     WHERE (:from IS NULL OR o.createdAt >= :from)
     AND   (:status IS NULL OR o.status = :status)
+    AND   o.member.id = :memberId
     """)
     Page<Order> findAllListPage(
+            @Param("memberId") Long memberId,
             @Param("from") LocalDateTime from,
             @Param("status") OrderStatus status,
             Pageable pageable

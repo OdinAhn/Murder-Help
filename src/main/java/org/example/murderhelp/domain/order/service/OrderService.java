@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,8 +27,9 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
 
-    public Page<OrderResponse> getOrderList(OrderListRequest orderListRequest, Pageable pageable) {
+    public Page<OrderResponse> getOrderList(Long memberId, OrderListRequest orderListRequest, Pageable pageable) {
         Page<Order> orderPage = orderRepository.findAllListPage(
+                memberId,
                 orderListRequest.period().toLocalDateTime(),
                 orderListRequest.status(),
                 pageable
@@ -56,9 +58,13 @@ public class OrderService {
         });
     }
 
-    public OrderResponse getOrder(Long orderId) {
+    public OrderResponse getOrder(Long memberId, Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+
+        if (!Objects.equals(order.getMember().getId(), memberId)) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
+        }
 
         List<OrderItem> orderItemList = orderItemRepository.findAllByOrder_Id(orderId);
 

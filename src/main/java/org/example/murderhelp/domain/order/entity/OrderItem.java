@@ -11,13 +11,16 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.global.entity.BaseTimeEntity;
 
 @Getter
 @Entity
 @Table(name = "order_items")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderItem extends BaseTimeEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -47,5 +50,12 @@ public class OrderItem extends BaseTimeEntity {
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
+    public OrderItem(Order order, Product product, int quantity) {
+        this.order = order;
+        this.product = product;
+        this.productName = product.getName();
+        this.unitPrice = product.getPrice();
+        this.quantity = quantity;
+    }
 
 }

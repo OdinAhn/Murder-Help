@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,20 +26,22 @@ public class OrderController {
 
     @GetMapping
     public ApiResponse<Page<OrderResponse>> getOrderList(
+            @AuthenticationPrincipal Long memberId,
             @Valid OrderListRequest orderListRequest,
             @PageableDefault(
                     sort = "createdAt",
                     direction = Sort.Direction.DESC
             ) Pageable pageable
     ) {
-        return ApiResponse.ok(orderService.getOrderList(orderListRequest, pageable));
+        return ApiResponse.ok(orderService.getOrderList(memberId, orderListRequest, pageable));
     }
 
     @GetMapping("/{orderId}")
     public ApiResponse<OrderResponse> getOrder(
+            @AuthenticationPrincipal Long memberId,
             @PathVariable Long orderId
     ) {
-        return ApiResponse.ok(orderService.getOrder(orderId));
+        return ApiResponse.ok(orderService.getOrder(memberId, orderId));
     }
 
 }

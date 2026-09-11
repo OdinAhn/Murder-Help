@@ -26,12 +26,17 @@ public class ProductTierAuthorityResolver {
     }
 
     private ProductTier toTier(String authority) {
-        if (authority == null || !authority.startsWith(ROLE_PREFIX)) {
+        if (authority == null) {
             return null;
         }
 
+        // "ROLE_YELLOW", "YELLOW" 둘 다 등급으로 인식한다
+        String tierName = authority.startsWith(ROLE_PREFIX)
+                ? authority.substring(ROLE_PREFIX.length())
+                : authority;
+
         try {
-            return ProductTier.valueOf(authority.substring(ROLE_PREFIX.length()));
+            return ProductTier.valueOf(tierName);
         } catch (IllegalArgumentException exception) {
             return null;
         }
