@@ -43,7 +43,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/searches/popular").permitAll()
                         .requestMatchers("/api/chat/**", "/ws/**").permitAll()
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().permitAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
