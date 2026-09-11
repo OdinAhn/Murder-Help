@@ -14,7 +14,7 @@ import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializ
 class RedisCacheConfigTest {
 
     @Test
-    void shouldConfigureRedisCacheForProductSearch() {
+    void shouldConfigureRedisCachesForProductSearchAndDetail() {
         RedisConnectionFactory connectionFactory = mock(RedisConnectionFactory.class);
         GenericJacksonJsonRedisSerializer valueSerializer =
                 new RedisConfig().redisValueSerializer();
@@ -28,5 +28,11 @@ class RedisCacheConfigTest {
         assertThat(cacheConfiguration).isNotNull();
         assertThat(cacheConfiguration.getTtlFunction().getTimeToLive(null, null))
                 .isEqualTo(Duration.ofMinutes(10));
+
+        RedisCacheConfiguration productDetailConfiguration = cacheManager.getCacheConfigurations()
+                .get(CacheNames.PRODUCT_DETAIL);
+        assertThat(productDetailConfiguration).isNotNull();
+        assertThat(productDetailConfiguration.getTtlFunction().getTimeToLive(null, null))
+                .isEqualTo(Duration.ofMinutes(5));
     }
 }
