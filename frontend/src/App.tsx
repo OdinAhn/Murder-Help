@@ -1,5 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NAV_ITEMS, SUBCATS, type Product, type Tier } from "./catalog";
+import { fetchProductList, searchProducts, type ApiProductSort } from "./api";
+import { FloatingChatWidget } from "./components/chat/FloatingChatWidget";
+
+const PAGE_SIZE = 12;
 
 /* ─── palette ─────────────────────────────────────────── */
 const C = {
@@ -21,6 +25,7 @@ const C = {
 
 /* ─── tier system ───────────────────────────────────────── */
 const TIERS: Record<Tier, { label: string; color: string; brightColor: string; desc: string; priceRange: string }> = {
+  green:  { label: "Code Green",  color: "#10b981", brightColor: "#34d399", desc: "본사 관리자 전용 / HQ Administration", priceRange: "Admin" },
   red:    { label: "Code Red",    color: C.red,    brightColor: C.redBright,    desc: "VIP 회원 등급 — 프리미엄 한정판 장비",       priceRange: "3,000원~" },
   purple: { label: "Code Purple", color: C.purple, brightColor: C.purpleBright, desc: "중급 회원 등급 — 중급 퍼포먼스 장비",        priceRange: "1,000 ~ 3,000원" },
   yellow: { label: "Code Yellow", color: C.yellow, brightColor: C.yellowBright, desc: "기본 회원 등급 — 엔트리급 BB탄 장비",       priceRange: "~1,000원" },
@@ -40,160 +45,27 @@ const FREE_SHIPPING_OVER = 20000;
 const PURPLE_AT = 200_000;
 const RED_AT = 800_000;
 
-function tierFor(spent: number): Tier {
+function tierFor(spent: number, id?: string): Tier {
+  if (id === "green") return "green";
   if (spent >= RED_AT) return "red";
   if (spent >= PURPLE_AT) return "purple";
   return "yellow";
 }
 
-/* 다음 등급과 남은 금액. 최고 등급이면 null */
-function nextTier(spent: number): { tier: Tier; remaining: number } | null {
-  if (spent < PURPLE_AT) return { tier: "purple", remaining: PURPLE_AT - spent };
-  if (spent < RED_AT) return { tier: "red", remaining: RED_AT - spent };
-  return null;
+/* 다음 등급까지 남은 금액. 최고 등급이면 null */
+function nextTier(spent: number, id?: string): { tier: Tier; remaining: number } | null {
+  if (id === "green") return null;
+  if (spent >= RED_AT) return null;
+  if (spent >= PURPLE_AT) return { tier: "red", remaining: RED_AT - spent };
+  return { tier: "purple", remaining: PURPLE_AT - spent };
 }
 
 /* 자기 등급 이하의 상품만 볼 수 있다. 로그인하지 않으면 아무것도 볼 수 없다. */
-const TIER_RANK: Record<Tier, number> = { yellow: 0, purple: 1, red: 2 };
+const TIER_RANK: Record<Tier, number> = { yellow: 0, purple: 1, red: 2, green: 99 };
 
 function canAccess(userTier: Tier | null, productTier: Tier) {
   if (!userTier) return false;
   return TIER_RANK[productTier] <= TIER_RANK[userTier];
-}
-
-type ProductSort = "POPULAR" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST";
-
-type ProductApiItem = {
-  id: number;
-  productCode: string;
-  name: string;
-  description: string;
-  category: string;
-  subCategory: string;
-  price: number;
-  tier: Tier;
-  imageUrl: string;
-  status: "ON_SALE" | "SOLD_OUT";
-};
-
-type ProductPage = {
-  items: ProductApiItem[];
-  page: number;
-  size: number;
-  totalElements: number;
-  totalPages: number;
-  hasNext: boolean;
-};
-
-type ProductApiResponse = {
-  code: string;
-  message?: string;
-  data?: ProductPage;
-};
-
-const PRODUCT_PAGE_SIZE = 18;
-
-function mergeProducts(current: Product[], incoming: Product[]) {
-  const merged = new Map(current.map((product) => [product.id, product]));
-  incoming.forEach((product) => merged.set(product.id, product));
-  return Array.from(merged.values());
-}
-
-function toProduct(item: ProductApiItem): Product {
-  return {
-    id: String(item.id),
-    name: item.name,
-    category: item.category,
-    sub: item.subCategory,
-    price: item.price,
-    tier: item.tier,
-    img: item.imageUrl,
-    desc: item.description,
-    specs: [],
-  };
-}
-
-async function fetchProductPage({
-  category,
-  subCategory,
-  tier,
-  memberTier,
-  sort,
-  page,
-  signal,
-}: {
-  category: string;
-  subCategory: string;
-  tier: Tier;
-  memberTier: Tier;
-  sort: ProductSort;
-  page: number;
-  signal: AbortSignal;
-}): Promise<ProductPage> {
-  const params = new URLSearchParams({
-    category,
-    tier,
-    sort,
-    page: String(page),
-    size: String(PRODUCT_PAGE_SIZE),
-  });
-
-  if (subCategory !== "전체") params.set("subCategory", subCategory);
-
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (import.meta.env.DEV) headers["X-Product-Tier"] = memberTier.toUpperCase();
-
-  const response = await fetch(`/api/products?${params.toString()}`, {
-    headers,
-    credentials: "include",
-    signal,
-  });
-
-  const body = await response.json().catch(() => null) as ProductApiResponse | null;
-  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
-    throw new Error(body?.message ?? "상품 목록을 불러오지 못했습니다.");
-  }
-  return body.data;
-}
-
-/* 상품명 검색 (v2 — Caffeine 캐시 적용). 카테고리/서브카테고리 없이 키워드로만 찾는다. */
-async function searchProductPage({
-  keyword,
-  tier,
-  memberTier,
-  sort,
-  page,
-  signal,
-}: {
-  keyword: string;
-  tier: Tier;
-  memberTier: Tier;
-  sort: ProductSort;
-  page: number;
-  signal: AbortSignal;
-}): Promise<ProductPage> {
-  const params = new URLSearchParams({
-    keyword,
-    tier,
-    sort,
-    page: String(page),
-    size: String(PRODUCT_PAGE_SIZE),
-  });
-
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (import.meta.env.DEV) headers["X-Product-Tier"] = memberTier.toUpperCase();
-
-  const response = await fetch(`/api/v2/products/search?${params.toString()}`, {
-    headers,
-    credentials: "include",
-    signal,
-  });
-
-  const body = await response.json().catch(() => null) as ProductApiResponse | null;
-  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
-    throw new Error(body?.message ?? "상품 검색에 실패했습니다.");
-  }
-  return body.data;
 }
 
 /* ─── demo accounts ──────────────────────────────────────── */
@@ -201,6 +73,7 @@ async function searchProductPage({
    들어가지만 새로고침하면 사라진다 — 비밀번호를 브라우저에 저장하지
    않으려고 일부러 메모리에만 둔다. */
 const ACCOUNTS: Record<string, { pw: string; spent: number }> = {
+  green: { pw: "1234", spent: 999999 },
   red: { pw: "1234", spent: RED_AT },
   purple: { pw: "1234", spent: PURPLE_AT },
   yellow: { pw: "1234", spent: 0 },
@@ -322,7 +195,7 @@ function TierBadge({ tier, small }: { tier: Tier; small?: boolean }) {
         background: `${t.color}18`,
       }}
     >
-      {tier === "red" ? "CODE RED" : tier === "purple" ? "CODE PURPLE" : "CODE YELLOW"}
+      {t.label.toUpperCase()}
     </span>
   );
 }
@@ -609,7 +482,7 @@ function LoginModal({ onLogin, onClose }: { onLogin: (id: string, spent: number)
                     <div key={key} className="flex items-center justify-between text-[11px]" style={{ fontFamily: "Share Tech Mono" }}>
                       <span style={{ color: C.textDim }}>{key}</span>
                       <span style={{ color: C.textMuted }}>{krw(spent)}</span>
-                      <span style={{ color: TIERS[tierFor(spent)].brightColor }}>{TIERS[tierFor(spent)].label}</span>
+                      <span style={{ color: TIERS[tierFor(spent, key)].brightColor }}>{TIERS[tierFor(spent, key)].label}</span>
                     </div>
                   );
                 })}
@@ -1492,90 +1365,116 @@ export default function App() {
   const [afterLogin, setAfterLogin] = useState<Pending | null>(null);
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
     const saved = read<Session | null>(SESSION_KEY, null);
-    return saved ? tierFor(saved.spent) : "red";
+    if (!saved) return "red";
+    const tier = tierFor(saved.spent, saved.id);
+    return tier === "green" ? "red" : tier;
   });
 
   /* 등급은 저장된 값이 아니라 누적 구매금액에서 계산한다 */
-  const userTier: Tier | null = session ? tierFor(session.spent) : null;
+  const userTier: Tier | null = session ? tierFor(session.spent, session.id) : null;
   const [activeNav, setActiveNav] = useState("Guns");
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /* ── 상품 목록/검색 (백엔드 연동) ──
+     화면에 한 번이라도 나타난 상품을 id(productCode)로 기억해 둔다.
+     장바구니 · 상세 화면은 별도 단건 조회 API가 없어 이 캐시에서 찾는다. */
+  const [productCache, setProductCache] = useState<Record<string, Product>>({});
+  const [listItems, setListItems] = useState<Product[]>([]);
+  const [listPage, setListPage] = useState(1);
+  const [listHasNext, setListHasNext] = useState(false);
+  const [listTotal, setListTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState(false);
+  const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
-  const isSearching = searchKeyword.length > 0;
-  const [products, setProducts] = useState<Product[]>([]);
-  const [knownProducts, setKnownProducts] = useState<Product[]>([]);
-  const [productSort, setProductSort] = useState<ProductSort>("POPULAR");
-  const [productPage, setProductPage] = useState(1);
-  const [productTotal, setProductTotal] = useState(0);
-  const [hasNextProducts, setHasNextProducts] = useState(false);
-  const [productsLoading, setProductsLoading] = useState(false);
-  const [productsError, setProductsError] = useState<string | null>(null);
-  const [productReloadKey, setProductReloadKey] = useState(0);
 
+  function cacheProducts(items: Product[]) {
+    setProductCache((prev) => {
+      const next = { ...prev };
+      for (const p of items) next[p.id] = p;
+      return next;
+    });
+  }
+
+  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록) */
   useEffect(() => {
-    if (!session || !userTier) {
-      setProducts([]);
-      setProductTotal(0);
-      setHasNextProducts(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    setProductsLoading(true);
-    setProductsError(null);
-
-    const request = isSearching
-      ? searchProductPage({
-          keyword: searchKeyword,
-          tier: activeCodeTab,
-          memberTier: userTier,
-          sort: productSort,
-          page: productPage,
-          signal: controller.signal,
-        })
-      : fetchProductPage({
-          category: activeNav,
-          subCategory: activeSub,
-          tier: activeCodeTab,
-          memberTier: userTier,
-          sort: productSort,
-          page: productPage,
-          signal: controller.signal,
-        });
-
-    request
-      .then((result) => {
-        const received = result.items.map(toProduct);
-        setProducts((current) => productPage === 1 ? received : mergeProducts(current, received));
-        setKnownProducts((current) => mergeProducts(current, received));
-        setProductTotal(result.totalElements);
-        setHasNextProducts(result.hasNext);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setProductsError(error instanceof Error ? error.message : (isSearching ? "상품 검색에 실패했습니다." : "상품 목록을 불러오지 못했습니다."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setProductsLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [session, userTier, activeNav, activeSub, activeCodeTab, productSort, productPage, productReloadKey, isSearching, searchKeyword]);
-
-  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록).
-     검색어가 바뀌면 카테고리/등급 변경과 같은 방식으로 1페이지부터 새로 불러온다. */
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const trimmed = searchInput.trim();
-      if (trimmed === searchKeyword) return;
-      setSearchKeyword(trimmed);
-      resetProductList();
-    }, 300);
+    const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
+  const isSearching = searchKeyword.length > 0;
+
+  function requestPage(page: number) {
+    return isSearching
+      ? searchProducts({
+          keyword: searchKeyword,
+          tier: activeCodeTab,
+          sort: sortKey,
+          page,
+          size: PAGE_SIZE,
+          memberTier: userTier ?? activeCodeTab,
+        })
+      : fetchProductList({
+          category: activeNav,
+          subCategory: activeSub === "전체" ? undefined : activeSub,
+          tier: activeCodeTab,
+          sort: sortKey,
+          page,
+          size: PAGE_SIZE,
+          memberTier: userTier ?? activeCodeTab,
+        });
+  }
+
+  /* 카테고리·등급 탭·정렬·검색어가 바뀌면 1페이지부터 새로 불러온다 */
+  useEffect(() => {
+    if (!session || !userTier || view.name !== "list") return;
+
+    let cancelled = false;
+    setListLoading(true);
+    setListError(false);
+
+    requestPage(1)
+      .then((res) => {
+        if (cancelled) return;
+        setListItems(res.items);
+        setListPage(1);
+        setListHasNext(res.hasNext);
+        setListTotal(res.totalElements);
+        cacheProducts(res.items);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setListItems([]);
+        setListHasNext(false);
+        setListTotal(0);
+        setListError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
+
+  function loadMoreProducts() {
+    if (!userTier || !listHasNext || listLoading) return;
+    const nextPage = listPage + 1;
+    setListLoading(true);
+
+    requestPage(nextPage)
+      .then((res) => {
+        setListItems((prev) => [...prev, ...res.items]);
+        setListPage(nextPage);
+        setListHasNext(res.hasNext);
+        cacheProducts(res.items);
+      })
+      .finally(() => setListLoading(false));
+  }
 
   /* 로그인한 계정 앞으로만 저장한다. 로그아웃 상태에서는 담을 수 없으므로
      저장할 것도 없고, 저장된 장바구니는 다음 로그인 때까지 그대로 남는다. */
@@ -1624,22 +1523,13 @@ export default function App() {
     setActiveSub("전체");
     setMenuOpen(false);
     setSearchInput("");
-    setSearchKeyword("");
-    resetProductList();
     navigate({ name: "list" });
-  }
-
-  function resetProductList() {
-    setProductPage(1);
-    setProducts([]);
-    setProductTotal(0);
-    setHasNextProducts(false);
   }
 
   function handleLogin(id: string, spent: number) {
     setSession({ id, spent });
-    setActiveCodeTab(tierFor(spent));
-    resetProductList();
+    const tier = tierFor(spent, id);
+    setActiveCodeTab(tier === "green" ? "red" : tier);
     setShowLogin(false);
 
     /* 이 계정이 지난번에 담아둔 장바구니를 되살린다 */
@@ -1664,8 +1554,6 @@ export default function App() {
     setActiveCodeTab("red");
     /* 화면에서만 비운다. 저장된 장바구니는 다음 로그인 때 돌아온다 */
     setCart([]);
-    setProducts([]);
-    setKnownProducts([]);
     navigate({ name: "list" });
   }
 
@@ -1674,30 +1562,13 @@ export default function App() {
     setActiveSub("전체");
     setMenuOpen(false);
     setSearchInput("");
-    setSearchKeyword("");
-    resetProductList();
     navigate({ name: "list" });
-  }
-
-  function changeSubCategory(subCategory: string) {
-    setActiveSub(subCategory);
-    resetProductList();
-  }
-
-  function changeTier(tier: Tier) {
-    setActiveCodeTab(tier);
-    resetProductList();
-  }
-
-  function changeProductSort(sort: ProductSort) {
-    setProductSort(sort);
-    resetProductList();
   }
 
   /* ── 장바구니 ── */
   const cartLines = cart
     .map((line) => {
-      const p = knownProducts.find((item) => item.id === line.id);
+      const p = productCache[line.id];
       return p ? { p, qty: line.qty } : null;
     })
     .filter((l): l is { p: Product; qty: number } => l !== null);
@@ -1720,7 +1591,7 @@ export default function App() {
       return false;
     }
     /* 등급이 모자라면 담을 수 없다 */
-    const p = knownProducts.find((item) => item.id === id);
+    const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return false;
     putInCart(id, qty);
     return true;
@@ -1750,7 +1621,7 @@ export default function App() {
       setShowLogin(true);
       return;
     }
-    const p = knownProducts.find((item) => item.id === id);
+    const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return;
     putInCart(id, qty);
     navigate({ name: "checkout" });
@@ -1765,17 +1636,19 @@ export default function App() {
       const spent = session.spent + total;
       ACCOUNTS[session.id].spent = spent;
       setSession({ ...session, spent });
-      if (tierFor(spent) !== tierFor(session.spent)) setActiveCodeTab(tierFor(spent));
+      if (tierFor(spent, session.id) !== tierFor(session.spent, session.id)) {
+        const newTier = tierFor(spent, session.id);
+        setActiveCodeTab(newTier === "green" ? "red" : newTier);
+      }
     }
 
     /* 주문서를 완료 화면으로 대체한다 — 뒤로 가기로 비워진 주문서에 돌아가지 않도록 */
     navigate({ name: "done", orderNo, total }, true);
   }
 
-  /* 카테고리, 서브 카테고리, 등급, 정렬 조건은 백엔드가 적용한다. */
-  const filtered = products;
-
-  const detailProduct = view.name === "detail" ? knownProducts.find((p) => p.id === view.id) ?? null : null;
+  /* 카테고리·등급 탭·검색 필터링은 백엔드(/api/products, /api/v1/products/search)가
+     이미 적용해서 내려준다. listItems는 그 결과를 그대로 담는다. */
+  const detailProduct = view.name === "detail" ? productCache[view.id] ?? null : null;
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -1955,7 +1828,7 @@ export default function App() {
                 tier={tier}
                 active={activeCodeTab === tier}
                 userTier={userTier}
-                onClick={() => changeTier(tier)}
+                onClick={() => setActiveCodeTab(tier)}
               />
             ))}
           </div>
@@ -2017,13 +1890,13 @@ export default function App() {
           {/* ── MAIN ────────────────────────────────────── */}
           <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-6">
             <div className="flex gap-0" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-              <Sidebar category={activeNav} activeSub={activeSub} onSub={changeSubCategory} />
+              <Sidebar category={activeNav} activeSub={activeSub} onSub={setActiveSub} />
 
               <div className="flex-1 p-5">
                 {/* mobile subcats */}
                 <div className="flex md:hidden gap-2 flex-wrap mb-4">
                   {(SUBCATS[activeNav] ?? []).map((s) => (
-                    <button key={s} onClick={() => changeSubCategory(s)}
+                    <button key={s} onClick={() => setActiveSub(s)}
                       className="text-[10px] uppercase tracking-widest px-2.5 py-1 transition-all"
                       style={{
                         fontFamily: "Share Tech Mono",
@@ -2048,13 +1921,13 @@ export default function App() {
                       className="text-xs px-1.5 py-0.5"
                       style={{ background: "rgba(200,30,0,0.12)", color: C.red, fontFamily: "Share Tech Mono", border: `1px solid ${C.redDim}` }}
                     >
-                      {productTotal}
+                      {listTotal}
                     </span>
-                    {productsLoading && <Spinner color={C.textMuted} />}
+                    {listLoading && <Spinner color={C.textMuted} />}
                   </div>
                   <select
-                    value={productSort}
-                    onChange={(event) => changeProductSort(event.target.value as ProductSort)}
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as ApiProductSort)}
                     className="text-[10px] uppercase tracking-wider px-2 py-1 outline-none"
                     style={{ background: "rgba(0,0,0,0.5)", color: C.textMuted, border: `1px solid ${C.panelBorder}`, fontFamily: "Share Tech Mono" }}
                   >
@@ -2066,29 +1939,22 @@ export default function App() {
                 </div>
 
                 {/* grid */}
-                {productsLoading && filtered.length === 0 ? (
-                  <div className="flex items-center justify-center gap-2 py-16" style={{ border: `1px dashed ${C.panelBorder}`, color: C.textDim }}>
-                    <Spinner color={C.redBright} />
-                    <span className="text-xs" style={{ fontFamily: "Share Tech Mono" }}>상품을 불러오는 중...</span>
+                {listError ? (
+                  <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
+                    <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
+                      LOAD FAILED
+                    </div>
+                    <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
+                      // 상품을 불러오지 못했습니다. 백엔드 서버 상태를 확인해 주세요.
+                    </div>
                   </div>
-                ) : productsError && filtered.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 gap-4" style={{ border: `1px dashed ${C.panelBorder}` }}>
-                    <div className="text-sm" style={{ color: C.redBright, fontFamily: "Noto Sans KR" }}>{productsError}</div>
-                    <button
-                      onClick={() => setProductReloadKey((key) => key + 1)}
-                      className="px-6 py-2 text-xs font-bold uppercase tracking-widest"
-                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono" }}
-                    >
-                      다시 시도
-                    </button>
-                  </div>
-                ) : filtered.length > 0 ? (
+                ) : listItems.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {filtered.map((p) => (
+                    {listItems.map((p) => (
                       <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
                     ))}
                   </div>
-                ) : !productsLoading ? (
+                ) : !listLoading ? (
                   <div className="flex flex-col items-center justify-center py-16" style={{ border: `1px dashed ${C.panelBorder}` }}>
                     <div className="text-3xl font-bold uppercase mb-2" style={{ fontFamily: "Cinzel, serif", color: C.redDim }}>
                       NO ITEMS
@@ -2099,26 +1965,17 @@ export default function App() {
                   </div>
                 ) : null}
 
-                {productsError && filtered.length > 0 && (
-                  <div className="text-center mt-5 text-xs" style={{ color: C.redBright, fontFamily: "Noto Sans KR" }}>
-                    {productsError}{" "}
-                    <button onClick={() => setProductReloadKey((key) => key + 1)} style={{ color: C.text, textDecoration: "underline" }}>
-                      다시 시도
-                    </button>
-                  </div>
-                )}
-
-                {filtered.length > 0 && hasNextProducts && !productsError && (
+                {listHasNext && (
                   <div className="text-center mt-8">
                     <button
-                      onClick={() => setProductPage((current) => current + 1)}
-                      disabled={productsLoading}
+                      onClick={loadMoreProducts}
+                      disabled={listLoading}
                       className="px-10 py-2.5 text-xs font-bold uppercase tracking-widest transition-all"
-                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono", cursor: productsLoading ? "wait" : "pointer" }}
+                      style={{ border: `1px solid ${C.panelBorder}`, color: C.textDim, fontFamily: "Share Tech Mono", cursor: listLoading ? "wait" : "pointer" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.red; (e.currentTarget as HTMLButtonElement).style.color = C.text; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = C.panelBorder; (e.currentTarget as HTMLButtonElement).style.color = C.textDim; }}
                     >
-                      {productsLoading ? <><Spinner color={C.textDim} /> 불러오는 중...</> : "더 보기 →"}
+                      {listLoading ? "불러오는 중…" : "더 보기 →"}
                     </button>
                   </div>
                 )}
@@ -2231,6 +2088,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      {session && <FloatingChatWidget customerId={1} isAdmin={userTier === "green"} />}
     </div>
   );
 }

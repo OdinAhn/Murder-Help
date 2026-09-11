@@ -1,4 +1,4 @@
-package org.example.murderhelp.global.config;
+package org.example.murderhelp.global.config.querydsl;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;

@@ -1,4 +1,4 @@
-package org.example.murderhelp.global.config;
+package org.example.murderhelp.global.config.websocket;
 
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.global.interceptor.StompAuthInterceptor;

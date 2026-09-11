@@ -1,6 +1,6 @@
 /* 이 파일은 gen-catalog.mjs / gen-detail.mjs 로 생성됩니다. 직접 고치지 마십시오. */
 
-export type Tier = "red" | "purple" | "yellow";
+export type Tier = "red" | "purple" | "yellow" | "green";
 
 export type Product = {
   id: string;

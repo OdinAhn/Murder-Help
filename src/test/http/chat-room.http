@@ -1,0 +1,25 @@
+### 1. 채팅방 생성 (문의 시작)
+POST http://localhost:8080/api/chat/rooms
+Content-Type: application/json
+
+{
+  "customerId": 1
+}
+
+### 2. 전체 채팅방 목록 조회 (관리자용, 마지막 메시지 최신순)
+GET http://localhost:8080/api/chat/rooms?page=0&size=10
+
+### 3. 특정 상태(대기중)의 채팅방 목록 조회
+GET http://localhost:8080/api/chat/rooms?status=WAITING&page=0&size=10
+
+### 4. 내(고객) 채팅방 목록 조회
+GET http://localhost:8080/api/chat/rooms?customerId=1&page=0&size=10
+
+### 5. 특정 채팅방 단건 조회
+GET http://localhost:8080/api/chat/rooms/1
+
+### 6. 특정 채팅방의 과거 메시지 내역 조회
+GET http://localhost:8080/api/chat/rooms/1/messages?page=0&size=20
+
+### 7. 상담 종료 처리 (관리자)
+PATCH http://localhost:8080/api/chat/rooms/1/close
