@@ -47,10 +47,11 @@ management:
         include: health
   endpoint:
     health:
-      show-details: always
+      show-details: never
 
 server:
   port: 8080
+  forward-headers-strategy: native
 
 # JWT 설정
 jwt:
