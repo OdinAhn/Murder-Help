@@ -1,4 +1,4 @@
-import type { Product, Tier } from "./catalog";
+import type { Product, Tier } from "../catalog";
 
 /* ══════════════════════════════════════════════════════════
    백엔드 연동 지점 (상품 목록 · 검색).
@@ -8,7 +8,15 @@ import type { Product, Tier } from "./catalog";
    ══════════════════════════════════════════════════════════ */
 const MEMBER_TIER_HEADER = "X-Product-Tier";
 
+export const PAGE_SIZE = 12;
+
 export type ApiProductSort = "POPULAR" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST";
+
+type ApiEnvelope<T> = {
+  code: string;
+  message?: string;
+  data?: T;
+};
 
 type ApiProductResponse = {
   id: number;
@@ -27,12 +35,6 @@ type ApiPage<T> = {
   totalElements: number;
   totalPages: number;
   hasNext: boolean;
-};
-
-type ApiEnvelope<T> = {
-  code: string;
-  message?: string;
-  data: T;
 };
 
 export type ApiProduct = Product & {
@@ -69,6 +71,8 @@ async function getPage(url: string, memberTier: Tier): Promise<ProductPage> {
   if (!res.ok) throw new Error(`상품 조회에 실패했습니다 (${res.status})`);
 
   const body = (await res.json()) as ApiEnvelope<ApiPage<ApiProductResponse>>;
+  if (!body.data) throw new Error(body.message ?? "상품 조회에 실패했습니다.");
+
   return {
     items: body.data.items.map(toProduct),
     page: body.data.page,
@@ -118,4 +122,68 @@ export function searchProducts(params: {
   });
 
   return getPage(`/api/v1/products/search?${qs.toString()}`, params.memberTier);
+}
+
+/* ─── 상품 상세 ───────────────────────────────────────────── */
+type ProductSpecApiResponse = {
+  name: string;
+  value: string;
+  sortOrder: number;
+};
+
+type ProductDetailApiResponse = {
+  id: number;
+  productCode: string;
+  name: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  price: number;
+  stockQuantity: number;
+  tier: Tier;
+  imageUrl: string;
+  status: "ON_SALE" | "SOLD_OUT";
+  specs: ProductSpecApiResponse[];
+};
+
+export type ProductDetailData = ApiProduct & {
+  stockQuantity: number;
+  status: "ON_SALE" | "SOLD_OUT";
+};
+
+/** GET /api/products/{id} — 상품 상세 조회 */
+export async function fetchProductDetail(
+  productId: number,
+  memberTier: Tier,
+  signal: AbortSignal,
+): Promise<ProductDetailData> {
+  const response = await fetch(`/api/products/${productId}`, {
+    headers: {
+      Accept: "application/json",
+      "X-Product-Tier": memberTier,
+    },
+    credentials: "include",
+    signal,
+  });
+  const body = await response.json().catch(() => null) as ApiEnvelope<ProductDetailApiResponse> | null;
+
+  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
+    throw new Error(body?.message ?? `상품 상세정보를 불러오지 못했습니다 (${response.status})`);
+  }
+
+  const product = body.data;
+  return {
+    productId: product.id,
+    id: product.productCode,
+    name: product.name,
+    category: product.category,
+    sub: product.subCategory,
+    price: product.price,
+    tier: product.tier,
+    img: product.imageUrl,
+    desc: product.description,
+    specs: product.specs.map((spec) => [spec.name, spec.value]),
+    stockQuantity: product.stockQuantity,
+    status: product.status,
+  };
 }
