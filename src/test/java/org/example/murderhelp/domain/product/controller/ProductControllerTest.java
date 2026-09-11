@@ -1,23 +1,29 @@
 package org.example.murderhelp.domain.product.controller;
 
+import com.jayway.jsonpath.JsonPath;
+import org.example.murderhelp.global.jwt.JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles({"test", "local"})
+@ActiveProfiles("test")
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:h2:mem:product-controller-test;MODE=MySQL;DB_CLOSE_DELAY=-1"
 })
@@ -29,11 +35,33 @@ class ProductControllerTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private JwtProvider jwtProvider;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    private String yellowAccessToken;
+    private String purpleAccessToken;
+    private String redAccessToken;
+
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        jdbcTemplate.update("delete from cart_items");
+        jdbcTemplate.update("delete from refresh_tokens");
+        jdbcTemplate.update("delete from member_spending");
+        jdbcTemplate.update("delete from members");
         jdbcTemplate.update("delete from product_specs");
         jdbcTemplate.update("delete from products");
         jdbcTemplate.update("delete from categories");
+
+        String encodedPassword = passwordEncoder.encode("password123");
+        insertMember(201L, "yellow@example.com", encodedPassword, "YELLOW");
+        insertMember(202L, "purple@example.com", encodedPassword, "PURPLE");
+        insertMember(203L, "red@example.com", encodedPassword, "RED");
+        yellowAccessToken = login("yellow@example.com");
+        purpleAccessToken = login("purple@example.com");
+        redAccessToken = login("red@example.com");
 
         insertCategory(1L, "Guns", null);
         insertCategory(11L, "Pistol", 1L);
@@ -57,7 +85,7 @@ class ProductControllerTest {
     void 상품_ID로_상세_정보와_정렬된_제원을_조회한다() throws Exception {
         mockMvc.perform(
                         get("/api/products/101")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -83,7 +111,7 @@ class ProductControllerTest {
     void 자기_등급보다_높은_상품의_상세_조회는_거부한다() throws Exception {
         mockMvc.perform(
                         get("/api/products/101")
-                                .with(user("yellow-member").authorities(() -> "YELLOW"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(yellowAccessToken))
                 )
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_002"))
@@ -94,7 +122,7 @@ class ProductControllerTest {
     void 존재하지_않는_상품의_상세_조회는_404를_반환한다() throws Exception {
         mockMvc.perform(
                         get("/api/products/999")
-                                .with(user("red-member").authorities(() -> "RED"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(redAccessToken))
                 )
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PRODUCT_001"));
@@ -104,7 +132,7 @@ class ProductControllerTest {
     void 판매_중단된_상품의_상세_조회는_404를_반환한다() throws Exception {
         mockMvc.perform(
                         get("/api/products/105")
-                                .with(user("red-member").authorities(() -> "RED"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(redAccessToken))
                 )
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PRODUCT_001"));
@@ -114,7 +142,7 @@ class ProductControllerTest {
     void 품절_상품의_상세_정보는_조회할_수_있다() throws Exception {
         mockMvc.perform(
                         get("/api/products/106")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SOLD_OUT"))
@@ -131,7 +159,7 @@ class ProductControllerTest {
     void 선택한_카테고리와_등급으로_상품을_필터링하고_페이지로_반환한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
                                 .param("category", "Guns")
                                 .param("subCategory", "Pistol")
                                 .param("tier", "purple")
@@ -160,7 +188,7 @@ class ProductControllerTest {
     void 서브카테고리를_생략하면_대분류의_모든_하위_카테고리를_조회한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
                                 .param("category", "Guns")
                                 .param("tier", "purple")
                                 .param("page", "1")
@@ -175,7 +203,7 @@ class ProductControllerTest {
     void 자기_등급보다_낮은_등급의_상품을_조회할_수_있다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
                                 .param("category", "Guns")
                                 .param("subCategory", "Pistol")
                                 .param("tier", "yellow")
@@ -186,10 +214,10 @@ class ProductControllerTest {
     }
 
     @Test
-    void 로컬_프로필에서는_HTTP_헤더로_상품_등급_권한을_검증할_수_있다() throws Exception {
+    void JWT에_인증된_회원의_등급으로_상품_권한을_검증한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .header("X-Product-Tier", "RED")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(redAccessToken))
                                 .param("category", "Guns")
                                 .param("subCategory", "Pistol")
                                 .param("tier", "yellow")
@@ -203,7 +231,7 @@ class ProductControllerTest {
     void 자기_등급보다_높은_등급을_요청하면_접근을_거부한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("yellow-member").authorities(() -> "YELLOW"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(yellowAccessToken))
                                 .param("category", "Guns")
                                 .param("tier", "red")
                 )
@@ -216,7 +244,7 @@ class ProductControllerTest {
     void 지원하지_않는_상품_등급을_요청하면_잘못된_요청으로_응답한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("red-member").authorities(() -> "RED"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(redAccessToken))
                                 .param("category", "Guns")
                                 .param("tier", "blue")
                 )
@@ -228,7 +256,7 @@ class ProductControllerTest {
     void 카테고리를_입력하지_않으면_잘못된_요청으로_응답한다() throws Exception {
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("yellow-member").authorities(() -> "YELLOW"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(yellowAccessToken))
                                 .param("tier", "yellow")
                 )
                 .andExpect(status().isBadRequest())
@@ -237,16 +265,17 @@ class ProductControllerTest {
     }
 
     @Test
-    void 로그인했어도_상품_등급_권한이_없으면_접근을_거부한다() throws Exception {
+    void JWT의_회원이_존재하지_않으면_인증을_거부한다() throws Exception {
+        String unknownMemberToken = jwtProvider.createAccessToken(999L, "unknown@example.com");
+
         mockMvc.perform(
                         get("/api/products")
-                                .with(user("member"))
+                                .header(HttpHeaders.AUTHORIZATION, bearer(unknownMemberToken))
                                 .param("category", "Guns")
                                 .param("tier", "yellow")
                 )
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_002"))
-                .andExpect(jsonPath("$.message").value("상품 등급 권한이 없습니다."));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_001"));
     }
 
     @Test
@@ -266,6 +295,40 @@ class ProductControllerTest {
                 name,
                 parentId
         );
+    }
+
+    private void insertMember(Long id, String email, String password, String grade) {
+        jdbcTemplate.update(
+                """
+                        insert into members (
+                            id, email, password, name, phone, grade, created_at, updated_at
+                        ) values (?, ?, ?, ?, ?, ?, current_timestamp, current_timestamp)
+                        """,
+                id,
+                email,
+                password,
+                grade + " member",
+                "010-0000-0000",
+                grade
+        );
+    }
+
+    private String login(String email) throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {"email":"%s","password":"password123"}
+                                        """.formatted(email))
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.accessToken");
+    }
+
+    private String bearer(String accessToken) {
+        return "Bearer " + accessToken;
     }
 
     private void insertProduct(

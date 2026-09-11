@@ -50,7 +50,7 @@ class ProductSearchV2ControllerTest {
     void v1과_동일한_요청이면_v2도_같은_검색_결과를_반환한다() throws Exception {
         MvcResult v1Result = mockMvc.perform(
                         get("/api/v1/products/search")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .with(user("purple-member").authorities(() -> "ROLE_PURPLE"))
                                 .param("keyword", "Pistol")
                                 .param("tier", "purple")
                                 .param("sort", "PRICE_ASC")
@@ -62,7 +62,7 @@ class ProductSearchV2ControllerTest {
 
         MvcResult v2Result = mockMvc.perform(
                         get("/api/v2/products/search")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .with(user("purple-member").authorities(() -> "ROLE_PURPLE"))
                                 .param("keyword", "Pistol")
                                 .param("tier", "purple")
                                 .param("sort", "PRICE_ASC")
@@ -81,7 +81,7 @@ class ProductSearchV2ControllerTest {
         for (int i = 0; i < 3; i++) {
             mockMvc.perform(
                             get("/api/v2/products/search")
-                                    .with(user("purple-member").authorities(() -> "PURPLE"))
+                                    .with(user("purple-member").authorities(() -> "ROLE_PURPLE"))
                                     .param("keyword", "Pistol")
                                     .param("tier", "purple")
                                     .param("page", "1")
@@ -97,7 +97,7 @@ class ProductSearchV2ControllerTest {
     void 자기_등급보다_높은_등급을_요청하면_접근을_거부한다() throws Exception {
         mockMvc.perform(
                         get("/api/v2/products/search")
-                                .with(user("yellow-member").authorities(() -> "YELLOW"))
+                                .with(user("yellow-member").authorities(() -> "ROLE_YELLOW"))
                                 .param("keyword", "Pistol")
                                 .param("tier", "red")
                 )
@@ -109,7 +109,7 @@ class ProductSearchV2ControllerTest {
     void 검색어를_입력하지_않으면_잘못된_요청으로_응답한다() throws Exception {
         mockMvc.perform(
                         get("/api/v2/products/search")
-                                .with(user("purple-member").authorities(() -> "PURPLE"))
+                                .with(user("purple-member").authorities(() -> "ROLE_PURPLE"))
                                 .param("tier", "purple")
                 )
                 .andExpect(status().isBadRequest())

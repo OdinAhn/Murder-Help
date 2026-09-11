@@ -1,12 +1,5 @@
 import type { Product, Tier } from "../catalog";
-
-/* ══════════════════════════════════════════════════════════
-   백엔드 연동 지점 (상품 목록 · 검색).
-   실제 로그인(JWT)이 붙기 전까지는 로컬 백엔드(local 프로필)의
-   X-Product-Tier 헤더로 "내 등급"을 흉내 낸다. 진짜 인증이 들어오면
-   이 헤더 대신 Authorization: Bearer <token> 을 보내는 것으로 바꾸면 된다.
-   ══════════════════════════════════════════════════════════ */
-const MEMBER_TIER_HEADER = "X-Product-Tier";
+import { getAccessToken } from "./auth";
 
 export const PAGE_SIZE = 12;
 
@@ -70,9 +63,20 @@ function toProduct(raw: ApiProductResponse): ApiProduct {
   };
 }
 
-async function getPage(url: string, memberTier: Tier): Promise<ProductPage> {
+function getAuthorizationHeaders(): HeadersInit {
+  const accessToken = getAccessToken();
+  if (!accessToken) throw new Error("로그인이 필요합니다.");
+
+  return {
+    Accept: "application/json",
+    Authorization: `Bearer ${accessToken}`,
+  };
+}
+
+async function getPage(url: string): Promise<ProductPage> {
   const res = await fetch(url, {
-    headers: { [MEMBER_TIER_HEADER]: memberTier },
+    headers: getAuthorizationHeaders(),
+    credentials: "include",
   });
   if (!res.ok) throw new Error(`상품 조회에 실패했습니다 (${res.status})`);
 
@@ -96,7 +100,6 @@ export function fetchProductList(params: {
   sort: ApiProductSort;
   page: number;
   size: number;
-  memberTier: Tier;
 }): Promise<ProductPage> {
   const qs = new URLSearchParams({
     category: params.category,
@@ -107,7 +110,7 @@ export function fetchProductList(params: {
   });
   if (params.subCategory) qs.set("subCategory", params.subCategory);
 
-  return getPage(`/api/products?${qs.toString()}`, params.memberTier);
+  return getPage(`/api/products?${qs.toString()}`);
 }
 
 /** GET /api/v1/products/search — 상품명 검색 (v1, 캐시 미적용) */
@@ -117,7 +120,6 @@ export function searchProducts(params: {
   sort: ApiProductSort;
   page: number;
   size: number;
-  memberTier: Tier;
 }): Promise<ProductPage> {
   const qs = new URLSearchParams({
     keyword: params.keyword,
@@ -127,12 +129,15 @@ export function searchProducts(params: {
     size: String(params.size),
   });
 
-  return getPage(`/api/v1/products/search?${qs.toString()}`, params.memberTier);
+  return getPage(`/api/v1/products/search?${qs.toString()}`);
 }
 
 /** GET /api/searches/popular — 오늘의 인기 검색어 조회 */
 export async function fetchPopularSearches(limit = 10): Promise<PopularSearch[]> {
-  const response = await fetch(`/api/searches/popular?limit=${limit}`);
+  const response = await fetch(`/api/searches/popular?limit=${limit}`, {
+    headers: getAuthorizationHeaders(),
+    credentials: "include",
+  });
   if (!response.ok) throw new Error(`인기 검색어 조회에 실패했습니다 (${response.status})`);
 
   const body = (await response.json()) as ApiEnvelope<PopularSearch[]>;
@@ -171,14 +176,10 @@ export type ProductDetailData = ApiProduct & {
 /** GET /api/products/{id} — 상품 상세 조회 */
 export async function fetchProductDetail(
   productId: number,
-  memberTier: Tier,
   signal: AbortSignal,
 ): Promise<ProductDetailData> {
   const response = await fetch(`/api/products/${productId}`, {
-    headers: {
-      Accept: "application/json",
-      "X-Product-Tier": memberTier,
-    },
+    headers: getAuthorizationHeaders(),
     credentials: "include",
     signal,
   });

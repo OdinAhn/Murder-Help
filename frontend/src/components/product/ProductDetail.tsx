@@ -11,24 +11,39 @@ export function ProductDetail({
 }: {
   p: Product;
   onBack: () => void;
-  /* 로그인이 필요해 담기지 않으면 false 를 돌려준다 */
-  onAddToCart: (qty: number) => boolean;
+  /* 서버 장바구니에 담긴 경우 true를 돌려준다. */
+  onAddToCart: (qty: number) => Promise<boolean>;
   onBuyNow: (qty: number) => void;
 }) {
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
   const t = TIERS[p.tier];
 
   useEffect(() => {
     setQty(1);
     setAdded(false);
+    setAdding(false);
+    setAddError("");
     window.scrollTo({ top: 0 });
   }, [p.id]);
 
-  function add() {
-    if (!onAddToCart(qty)) return;
-    setAdded(true);
-    window.setTimeout(() => setAdded(false), 1800);
+  async function add() {
+    if (adding) return;
+
+    setAdding(true);
+    setAddError("");
+
+    try {
+      if (!await onAddToCart(qty)) return;
+      setAdded(true);
+      window.setTimeout(() => setAdded(false), 1800);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "장바구니에 상품을 담지 못했습니다.");
+    } finally {
+      setAdding(false);
+    }
   }
 
   return (
@@ -125,15 +140,17 @@ export function ProductDetail({
           <div className="flex gap-3">
             <button
               onClick={add}
+              disabled={adding}
               className="flex-1 py-3.5 text-sm font-bold uppercase tracking-widest transition-all"
               style={{
                 border: `1px solid ${added ? t.color : C.panelBorder}`,
                 color: added ? t.brightColor : C.text,
                 background: "rgba(0,0,0,0.4)",
                 fontFamily: "Share Tech Mono",
+                cursor: adding ? "wait" : "pointer",
               }}
             >
-              {added ? "담았습니다 ✓" : "장바구니에 담기"}
+              {adding ? "담는 중..." : added ? "담았습니다 ✓" : "장바구니에 담기"}
             </button>
             <button
               onClick={() => onBuyNow(qty)}
@@ -143,6 +160,12 @@ export function ProductDetail({
               결제하기 →
             </button>
           </div>
+
+          {addError && (
+            <p className="text-xs mt-3" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
+              {addError}
+            </p>
+          )}
 
           <p className="text-[10px] mt-4" style={{ color: C.textMuted, fontFamily: "Noto Sans KR, sans-serif" }}>
             BB탄 전용 에어소프트 제품입니다. 만 18세 이상만 구매하실 수 있습니다.

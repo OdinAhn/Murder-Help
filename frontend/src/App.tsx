@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { addCartItem } from "./api/cart";
 import {
   fetchPopularSearches,
   fetchProductDetail,
@@ -85,7 +86,7 @@ export default function App() {
      상세조회에는 목록 API가 내려준 DB 상품 ID(productId)를 사용한다. */
   const [productCache, setProductCache] = useState<Record<string, ApiProduct>>({});
   const [listItems, setListItems] = useState<ApiProduct[]>([]);
-  const [listPage, setListPage] = useState(1);
+  const [listPage, setListPage] = useState(0);
   const [listHasNext, setListHasNext] = useState(false);
   const [listTotal, setListTotal] = useState(0);
   const [listLoading, setListLoading] = useState(false);
@@ -141,7 +142,6 @@ export default function App() {
           sort: sortKey,
           page,
           size: PAGE_SIZE,
-          memberTier: userTier ?? activeCodeTab,
         })
       : fetchProductList({
           category: activeNav,
@@ -150,7 +150,6 @@ export default function App() {
           sort: sortKey,
           page,
           size: PAGE_SIZE,
-          memberTier: userTier ?? activeCodeTab,
         });
   }
 
@@ -162,11 +161,11 @@ export default function App() {
     setListLoading(true);
     setListError(false);
 
-    requestPage(1)
+    requestPage(0)
       .then((res) => {
         if (cancelled) return;
         setListItems(res.items);
-        setListPage(1);
+        setListPage(0);
         setListHasNext(res.hasNext);
         setListTotal(res.totalElements);
         cacheProducts(res.items);
@@ -225,7 +224,7 @@ export default function App() {
     setDetailLoading(true);
     setDetailError(null);
 
-    fetchProductDetail(detailProductId, userTier, controller.signal)
+    fetchProductDetail(detailProductId, controller.signal)
       .then((product) => {
         setDetailProduct(product);
         cacheProducts([product]);
@@ -350,8 +349,8 @@ export default function App() {
     });
   }
 
-  /* 담겼으면 true. 로그인이 필요하면 로그인 모달을 띄우고 false */
-  function addToCart(id: string, qty: number): boolean {
+  /* 서버 장바구니에 담긴 경우에만 화면 장바구니에도 반영한다. */
+  async function addToCart(id: string, qty: number): Promise<boolean> {
     if (!userTier) {
       setAfterLogin({ kind: "add", id, qty });
       setShowLogin(true);
@@ -360,7 +359,18 @@ export default function App() {
     /* 등급이 모자라면 담을 수 없다 */
     const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return false;
-    putInCart(id, qty);
+
+    const savedItem = await addCartItem(p.productId, qty);
+    setCart((prev) => {
+      const found = prev.some((line) => line.id === id);
+      if (found) {
+        return prev.map((line) =>
+          line.id === id ? { ...line, qty: savedItem.quantity } : line
+        );
+      }
+      return [...prev, { id, qty: savedItem.quantity }];
+    });
+
     return true;
   }
 

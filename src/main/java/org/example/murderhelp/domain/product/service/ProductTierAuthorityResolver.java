@@ -11,6 +11,8 @@ import java.util.Comparator;
 @Component
 public class ProductTierAuthorityResolver {
 
+    private static final String ROLE_PREFIX = "ROLE_";
+
     public ProductTier resolve(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
@@ -24,12 +26,12 @@ public class ProductTierAuthorityResolver {
     }
 
     private ProductTier toTier(String authority) {
-        if (authority == null) {
+        if (authority == null || !authority.startsWith(ROLE_PREFIX)) {
             return null;
         }
 
         try {
-            return ProductTier.valueOf(authority);
+            return ProductTier.valueOf(authority.substring(ROLE_PREFIX.length()));
         } catch (IllegalArgumentException exception) {
             return null;
         }
