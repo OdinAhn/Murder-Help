@@ -42,6 +42,13 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = CacheNames.PRODUCT_LIST,
+            key = "'category:' + #category + ':subCategory:' + #subCategory"
+                    + " + ':requestedTier:' + #requestedTier + ':memberTier:' + #memberTier"
+                    + " + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize"
+                    + " + ':sort:' + #sort"
+    )
     public PageResponse<ProductResponse> getProducts(
             ProductTier memberTier,
             ProductTier requestedTier,

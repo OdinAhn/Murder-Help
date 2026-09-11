@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -64,6 +65,10 @@ class ProductControllerTest {
         Cache productDetailCache = cacheManager.getCache(CacheNames.PRODUCT_DETAIL);
         if (productDetailCache != null) {
             productDetailCache.clear();
+        }
+        Cache productListCache = cacheManager.getCache(CacheNames.PRODUCT_LIST);
+        if (productListCache != null) {
+            productListCache.clear();
         }
 
         jdbcTemplate.update("delete from cart_items");
@@ -138,6 +143,26 @@ class ProductControllerTest {
 
         verify(productRepository, times(1))
                 .findProductDetail(101L, ProductStatus.DISCONTINUED);
+    }
+
+    @Test
+    void 같은_조건의_상품_목록_반복_조회는_캐시를_사용한다() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(
+                            get("/api/products")
+                                    .header(HttpHeaders.AUTHORIZATION, bearer(purpleAccessToken))
+                                    .param("category", "Guns")
+                                    .param("subCategory", "Pistol")
+                                    .param("tier", "purple")
+                                    .param("sort", "PRICE_ASC")
+                                    .param("page", "1")
+                                    .param("size", "10")
+                    )
+                    .andExpect(status().isOk());
+        }
+
+        verify(productRepository, times(1))
+                .findProducts(any(), any(), any(), any(), any());
     }
 
     @Test
