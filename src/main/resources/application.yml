@@ -55,7 +55,8 @@ server:
 # JWT 설정
 jwt:
   secret: "c3BhcnRhLXBheW1lbnQtand0LXNlY3JldC1rZXktZm9yLWJvb3RjYW1wLTIwMjYtdmVyeS1sb25nLXNlY3JldA=="  # Base64 encoded
-  expiration: 3600000  # 1시간 (ms)
+  access-expiration: 1800000  # 1시간 (ms)
+  refresh-expiration: 1209600000    
 
 aws:
   s3:

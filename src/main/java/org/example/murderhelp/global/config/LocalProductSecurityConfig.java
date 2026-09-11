@@ -45,7 +45,7 @@ public class LocalProductSecurityConfig {
                 .build();
     }
 
-    @Bean
+    /*@Bean
     @Order(2)
     SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -58,7 +58,7 @@ public class LocalProductSecurityConfig {
                 .formLogin(Customizer.withDefaults())
                 .httpBasic(Customizer.withDefaults())
                 .build();
-    }
+    }*/
 
     private static class LocalProductTierAuthenticationFilter extends OncePerRequestFilter {
 
