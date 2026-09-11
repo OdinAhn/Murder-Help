@@ -3,7 +3,7 @@ package org.example.murderhelp.domain.product.service;
 import org.example.murderhelp.domain.product.dto.ProductSort;
 import org.example.murderhelp.domain.product.entity.ProductTier;
 import org.example.murderhelp.domain.product.repository.ProductRepository;
-import org.example.murderhelp.global.config.cache.LocalCacheConfig;
+import org.example.murderhelp.global.config.cache.CacheNames;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +37,7 @@ class ProductSearchCachingTest {
 
     @BeforeEach
     void clearCache() {
-        Cache cache = cacheManager.getCache(LocalCacheConfig.PRODUCT_SEARCH_CACHE);
+        Cache cache = cacheManager.getCache(CacheNames.PRODUCT_SEARCH);
         if (cache != null) {
             cache.clear();
         }

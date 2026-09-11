@@ -8,21 +8,40 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 @Configuration
 public class RedisConfig {
 
     @Bean
-    public RedisTemplate<String, Object> RedisTemplate(RedisConnectionFactory connectionFactory) {
+    public GenericJacksonJsonRedisSerializer redisValueSerializer() {
+        BasicPolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("org.example.murderhelp")
+                .allowIfSubType("java.util")
+                .allowIfSubType("java.time")
+                .build();
+
+        return GenericJacksonJsonRedisSerializer.builder()
+                .enableDefaultTyping(typeValidator)
+                .customize(builder -> builder.findAndAddModules())
+                .build();
+    }
+
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(
+            RedisConnectionFactory connectionFactory,
+            GenericJacksonJsonRedisSerializer redisValueSerializer
+    ) {
+        StringRedisSerializer keySerializer = new StringRedisSerializer();
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        template.setKeySerializer(RedisSerializer.string());
-        template.setHashKeySerializer(RedisSerializer.string());
-
-        template.setValueSerializer(RedisSerializer.json());
-        template.setHashValueSerializer(RedisSerializer.json());
+        template.setKeySerializer(keySerializer);
+        template.setHashKeySerializer(keySerializer);
+        template.setValueSerializer(redisValueSerializer);
+        template.setHashValueSerializer(redisValueSerializer);
 
         template.afterPropertiesSet();
         return template;
