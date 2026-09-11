@@ -11,6 +11,7 @@ const MEMBER_TIER_HEADER = "X-Product-Tier";
 export type ApiProductSort = "POPULAR" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST";
 
 type ApiProductResponse = {
+  id: number;
   productCode: string;
   name: string;
   category: string;
@@ -34,16 +35,21 @@ type ApiEnvelope<T> = {
   data: T;
 };
 
+export type ApiProduct = Product & {
+  productId: number;
+};
+
 export type ProductPage = {
-  items: Product[];
+  items: ApiProduct[];
   page: number;
   totalElements: number;
   totalPages: number;
   hasNext: boolean;
 };
 
-function toProduct(raw: ApiProductResponse): Product {
+function toProduct(raw: ApiProductResponse): ApiProduct {
   return {
+    productId: raw.id,
     id: raw.productCode,
     name: raw.name,
     category: raw.category,

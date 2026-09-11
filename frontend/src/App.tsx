@@ -1,9 +1,77 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NAV_ITEMS, SUBCATS, type Product, type Tier } from "./catalog";
-import { fetchProductList, searchProducts, type ApiProductSort } from "./api";
+import { fetchProductList, searchProducts, type ApiProduct, type ApiProductSort } from "./api";
 import { FloatingChatWidget } from "./components/chat/FloatingChatWidget";
 
 const PAGE_SIZE = 12;
+
+type ProductSpecApiResponse = {
+  name: string;
+  value: string;
+  sortOrder: number;
+};
+
+type ProductDetailApiResponse = {
+  id: number;
+  productCode: string;
+  name: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  price: number;
+  stockQuantity: number;
+  tier: Tier;
+  imageUrl: string;
+  status: "ON_SALE" | "SOLD_OUT";
+  specs: ProductSpecApiResponse[];
+};
+
+type ApiResponse<T> = {
+  code: string;
+  message?: string;
+  data?: T;
+};
+
+type ProductDetailData = ApiProduct & {
+  stockQuantity: number;
+  status: "ON_SALE" | "SOLD_OUT";
+};
+
+async function fetchProductDetail(
+  productId: number,
+  memberTier: Tier,
+  signal: AbortSignal,
+): Promise<ProductDetailData> {
+  const response = await fetch(`/api/products/${productId}`, {
+    headers: {
+      Accept: "application/json",
+      "X-Product-Tier": memberTier,
+    },
+    credentials: "include",
+    signal,
+  });
+  const body = await response.json().catch(() => null) as ApiResponse<ProductDetailApiResponse> | null;
+
+  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
+    throw new Error(body?.message ?? `상품 상세정보를 불러오지 못했습니다 (${response.status})`);
+  }
+
+  const product = body.data;
+  return {
+    productId: product.id,
+    id: product.productCode,
+    name: product.name,
+    category: product.category,
+    sub: product.subCategory,
+    price: product.price,
+    tier: product.tier,
+    img: product.imageUrl,
+    desc: product.description,
+    specs: product.specs.map((spec) => [spec.name, spec.value]),
+    stockQuantity: product.stockQuantity,
+    status: product.status,
+  };
+}
 
 /* ─── palette ─────────────────────────────────────────── */
 const C = {
@@ -1376,11 +1444,11 @@ export default function App() {
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  /* ── 상품 목록/검색 (백엔드 연동) ──
-     화면에 한 번이라도 나타난 상품을 id(productCode)로 기억해 둔다.
-     장바구니 · 상세 화면은 별도 단건 조회 API가 없어 이 캐시에서 찾는다. */
-  const [productCache, setProductCache] = useState<Record<string, Product>>({});
-  const [listItems, setListItems] = useState<Product[]>([]);
+  /* ── 상품 목록/검색/상세 (백엔드 연동) ──
+     상품 코드는 기존 화면과 장바구니 식별자로 유지하고,
+     상세조회에는 목록 API가 내려준 DB 상품 ID(productId)를 사용한다. */
+  const [productCache, setProductCache] = useState<Record<string, ApiProduct>>({});
+  const [listItems, setListItems] = useState<ApiProduct[]>([]);
   const [listPage, setListPage] = useState(1);
   const [listHasNext, setListHasNext] = useState(false);
   const [listTotal, setListTotal] = useState(0);
@@ -1389,8 +1457,12 @@ export default function App() {
   const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [detailProduct, setDetailProduct] = useState<ProductDetailData | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
 
-  function cacheProducts(items: Product[]) {
+  function cacheProducts(items: ApiProduct[]) {
     setProductCache((prev) => {
       const next = { ...prev };
       for (const p of items) next[p.id] = p;
@@ -1475,6 +1547,46 @@ export default function App() {
       })
       .finally(() => setListLoading(false));
   }
+
+  const detailProductId = view.name === "detail" ? Number(view.id) : null;
+
+  useEffect(() => {
+    if (!session || !userTier || detailProductId === null) {
+      setDetailProduct(null);
+      setDetailLoading(false);
+      setDetailError(null);
+      return;
+    }
+
+    if (!Number.isSafeInteger(detailProductId) || detailProductId <= 0) {
+      setDetailProduct(null);
+      setDetailLoading(false);
+      setDetailError("올바르지 않은 상품 ID입니다.");
+      return;
+    }
+
+    const controller = new AbortController();
+    setDetailProduct(null);
+    setDetailLoading(true);
+    setDetailError(null);
+
+    fetchProductDetail(detailProductId, userTier, controller.signal)
+      .then((product) => {
+        setDetailProduct(product);
+        cacheProducts([product]);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setDetailError(error instanceof Error ? error.message : "상품 상세정보를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailLoading(false);
+      });
+
+    return () => controller.abort();
+    // cacheProducts는 상태 갱신 헬퍼이므로 상세조회 재실행 조건에서 제외한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, userTier, detailProductId, detailReloadKey]);
 
   /* 로그인한 계정 앞으로만 저장한다. 로그아웃 상태에서는 담을 수 없으므로
      저장할 것도 없고, 저장된 장바구니는 다음 로그인 때까지 그대로 남는다. */
@@ -1571,7 +1683,7 @@ export default function App() {
       const p = productCache[line.id];
       return p ? { p, qty: line.qty } : null;
     })
-    .filter((l): l is { p: Product; qty: number } => l !== null);
+    .filter((l): l is { p: ApiProduct; qty: number } => l !== null);
 
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
 
@@ -1648,7 +1760,6 @@ export default function App() {
 
   /* 카테고리·등급 탭·검색 필터링은 백엔드(/api/products, /api/v1/products/search)가
      이미 적용해서 내려준다. listItems는 그 결과를 그대로 담는다. */
-  const detailProduct = view.name === "detail" ? productCache[view.id] ?? null : null;
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -1951,7 +2062,11 @@ export default function App() {
                 ) : listItems.length > 0 ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {listItems.map((p) => (
-                      <ProductCard key={p.id} p={p} onOpen={() => navigate({ name: "detail", id: p.id })} />
+                      <ProductCard
+                        key={p.id}
+                        p={p}
+                        onOpen={() => navigate({ name: "detail", id: String(p.productId) })}
+                      />
                     ))}
                   </div>
                 ) : !listLoading ? (
@@ -1983,6 +2098,52 @@ export default function App() {
             </div>
           </div>
         </>
+      )}
+
+      {session && view.name === "detail" && detailLoading && (
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-20">
+          <div
+            className="flex items-center justify-center gap-3 py-20"
+            style={{ background: C.panel, border: `1px solid ${C.panelBorder}`, color: C.textDim }}
+          >
+            <Spinner color={C.redBright} />
+            <span className="text-xs" style={{ fontFamily: "Share Tech Mono" }}>
+              상품 상세정보를 불러오는 중...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {session && view.name === "detail" && !detailLoading && detailError && (
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-20">
+          <div
+            className="max-w-md mx-auto p-10 text-center"
+            style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}
+          >
+            <div className="text-xl font-bold uppercase mb-3" style={{ fontFamily: "Cinzel, serif", color: C.text }}>
+              Load Failed
+            </div>
+            <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
+              {detailError}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigate({ name: "list" })}
+                className="flex-1 py-3 text-sm font-bold uppercase tracking-widest"
+                style={{ color: C.textDim, border: `1px solid ${C.panelBorder}`, fontFamily: "Share Tech Mono" }}
+              >
+                목록으로
+              </button>
+              <button
+                onClick={() => setDetailReloadKey((key) => key + 1)}
+                className="flex-1 py-3 text-sm font-bold uppercase tracking-widest"
+                style={{ background: C.red, color: "#fff", border: `1px solid ${C.redBright}`, fontFamily: "Share Tech Mono" }}
+              >
+                다시 시도
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {session && view.name === "detail" && detailProduct && detailAllowed && (
