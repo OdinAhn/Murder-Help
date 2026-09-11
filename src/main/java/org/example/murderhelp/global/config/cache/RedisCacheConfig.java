@@ -20,14 +20,15 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 public class RedisCacheConfig {
 
     private static final Duration PRODUCT_SEARCH_TTL = Duration.ofMinutes(10);
+    private static final Duration PRODUCT_DETAIL_TTL = Duration.ofMinutes(5);
+    private static final Duration PRODUCT_LIST_TTL = Duration.ofMinutes(3);
 
     @Bean
     public CacheManager cacheManager(
             RedisConnectionFactory connectionFactory,
             GenericJacksonJsonRedisSerializer redisValueSerializer
     ) {
-        RedisCacheConfiguration productSearchConfiguration = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(PRODUCT_SEARCH_TTL)
+        RedisCacheConfiguration defaultConfiguration = RedisCacheConfiguration.defaultCacheConfig()
                 .disableCachingNullValues()
                 .serializeKeysWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer())
@@ -35,11 +36,18 @@ public class RedisCacheConfig {
                 .serializeValuesWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(redisValueSerializer)
                 );
+        RedisCacheConfiguration productSearchConfiguration = defaultConfiguration.entryTtl(PRODUCT_SEARCH_TTL);
+        RedisCacheConfiguration productDetailConfiguration = defaultConfiguration.entryTtl(PRODUCT_DETAIL_TTL);
+        RedisCacheConfiguration productListConfiguration = defaultConfiguration.entryTtl(PRODUCT_LIST_TTL);
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(productSearchConfiguration)
                 .withInitialCacheConfigurations(
-                        Map.of(CacheNames.PRODUCT_SEARCH, productSearchConfiguration)
+                        Map.of(
+                                CacheNames.PRODUCT_SEARCH, productSearchConfiguration,
+                                CacheNames.PRODUCT_DETAIL, productDetailConfiguration,
+                                CacheNames.PRODUCT_LIST, productListConfiguration
+                        )
                 )
                 .build();
     }

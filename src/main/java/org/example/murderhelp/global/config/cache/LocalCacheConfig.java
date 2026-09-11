@@ -16,10 +16,19 @@ public class LocalCacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager(CacheNames.PRODUCT_SEARCH);
-        cacheManager.setCaffeine(Caffeine.newBuilder()
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+        cacheManager.registerCustomCache(CacheNames.PRODUCT_SEARCH, Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofMinutes(10))
-                .maximumSize(500));
+                .maximumSize(500)
+                .build());
+        cacheManager.registerCustomCache(CacheNames.PRODUCT_DETAIL, Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(5))
+                .maximumSize(500)
+                .build());
+        cacheManager.registerCustomCache(CacheNames.PRODUCT_LIST, Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(3))
+                .maximumSize(500)
+                .build());
         return cacheManager;
     }
 }
