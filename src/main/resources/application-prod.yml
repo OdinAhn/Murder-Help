@@ -1,6 +1,8 @@
 spring:
   config:
     import: "aws-parameterstore:/murder-help/${APP_ENV:prod}/"
+  cache:
+    type: redis
   datasource:
     url: jdbc:mysql://${AWS_RDS_HOST}:${AWS_RDS_PORT}/murder_help
     username: ${AWS_RDS_USERNAME}
@@ -9,7 +11,11 @@ spring:
   data:
     redis:
       host: ${AWS_REDIS_HOST}
-      port: ${AWS_REDIS_PORT}
+      port: ${AWS_REDIS_PORT:6379}
+      username: ${AWS_REDIS_USERNAME:}
+      password: ${AWS_REDIS_PASSWORD:}
+      ssl:
+        enabled: ${AWS_REDIS_SSL_ENABLED:false}
   jpa:
     hibernate:
       ddl-auto: validate

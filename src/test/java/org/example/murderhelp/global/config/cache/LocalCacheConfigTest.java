@@ -19,6 +19,6 @@ class LocalCacheConfigTest {
     @Test
     void shouldConfigureCaffeineCacheForProductSearch() {
         assertThat(cacheManager).isInstanceOf(CaffeineCacheManager.class);
-        assertThat(cacheManager.getCache(LocalCacheConfig.PRODUCT_SEARCH_CACHE)).isNotNull();
+        assertThat(cacheManager.getCache(CacheNames.PRODUCT_SEARCH)).isNotNull();
     }
 }

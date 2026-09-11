@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { fetchProductDetail, fetchProductList, searchProducts, PAGE_SIZE, type ApiProduct, type ApiProductSort, type ProductDetailData } from "./api/products";
+import {
+  fetchPopularSearches,
+  fetchProductDetail,
+  fetchProductList,
+  searchProducts,
+  PAGE_SIZE,
+  type ApiProduct,
+  type ApiProductSort,
+  type PopularSearch,
+  type ProductDetailData,
+} from "./api/products";
 import { NAV_ITEMS, SUBCATS, type Tier } from "./catalog";
 import { Gate } from "./components/auth/Gate";
 import { LoginModal } from "./components/auth/LoginModal";
@@ -83,6 +93,8 @@ export default function App() {
   const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [popularSearches, setPopularSearches] = useState<PopularSearch[]>([]);
   const [detailProduct, setDetailProduct] = useState<ProductDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -101,6 +113,23 @@ export default function App() {
     const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!searchFocused || searchInput.trim()) return;
+
+    let cancelled = false;
+    fetchPopularSearches()
+      .then((searches) => {
+        if (!cancelled) setPopularSearches(searches);
+      })
+      .catch(() => {
+        if (!cancelled) setPopularSearches([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchFocused, searchInput]);
 
   const isSearching = searchKeyword.length > 0;
 
@@ -446,7 +475,7 @@ export default function App() {
             {/* Right actions */}
             <div className="flex items-center gap-3">
               {/* search */}
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs"
+              <div className="relative hidden md:flex items-center gap-2 px-3 py-1.5 text-xs"
                 style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${C.panelBorder}` }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
                   <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -454,10 +483,38 @@ export default function App() {
                 <input
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
                   placeholder="검색..."
                   className="bg-transparent outline-none w-20 text-xs"
                   style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}
                 />
+                {searchFocused && !searchInput.trim() && popularSearches.length > 0 && (
+                  <div
+                    className="absolute top-full left-0 z-50 mt-2 w-52 p-2"
+                    style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}
+                  >
+                    <p className="px-2 py-1 text-[10px] tracking-widest" style={{ color: C.red, fontFamily: "Share Tech Mono" }}>
+                      POPULAR SEARCHES
+                    </p>
+                    {popularSearches.map((search) => (
+                      <button
+                        key={search.keyword}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setSearchInput(search.keyword);
+                          setSearchFocused(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs"
+                        style={{ color: C.textDim }}
+                      >
+                        <span style={{ color: C.red, fontFamily: "Share Tech Mono" }}>{search.rank}</span>
+                        <span className="truncate">{search.keyword}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* cart */}

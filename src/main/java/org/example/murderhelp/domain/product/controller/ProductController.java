@@ -7,6 +7,7 @@ import org.example.murderhelp.domain.product.dto.ProductSort;
 import org.example.murderhelp.domain.product.entity.ProductTier;
 import org.example.murderhelp.domain.product.service.ProductService;
 import org.example.murderhelp.domain.product.service.ProductTierAuthorityResolver;
+import org.example.murderhelp.domain.search.service.PopularSearchService;
 import org.example.murderhelp.global.response.ApiResponse;
 import org.example.murderhelp.global.response.PageResponse;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +23,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final ProductTierAuthorityResolver productTierAuthorityResolver;
+    private final PopularSearchService popularSearchService;
 
     @GetMapping("/api/products/{productId}")
     public ApiResponse<ProductDetailResponse> getProduct(
@@ -69,15 +71,16 @@ public class ProductController {
         ProductTier requestedTier = ProductTier.fromValue(tier);
         ProductSort productSort = ProductSort.fromValue(sort);
 
-        return ApiResponse.ok(
-                productService.searchProducts(
-                        memberTier,
-                        requestedTier,
-                        keyword,
-                        productSort,
-                        pageable
-                )
+        PageResponse<ProductResponse> response = productService.searchProducts(
+                memberTier,
+                requestedTier,
+                keyword,
+                productSort,
+                pageable
         );
+        popularSearchService.recordSearch(authentication.getName(), keyword);
+
+        return ApiResponse.ok(response);
     }
 
     /**
@@ -100,8 +103,14 @@ public class ProductController {
 
         productService.assertProductTierAccess(memberTier, requestedTier);
 
-        return ApiResponse.ok(
-                productService.searchProductsCached(requestedTier, keyword, productSort, pageable)
+        PageResponse<ProductResponse> response = productService.searchProductsCached(
+                requestedTier,
+                keyword,
+                productSort,
+                pageable
         );
+        popularSearchService.recordSearch(authentication.getName(), keyword);
+
+        return ApiResponse.ok(response);
     }
 }
