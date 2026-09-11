@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.murderhelp.domain.product.service.ProductTierConverter;
+import org.example.murderhelp.global.error.BusinessException;
+import org.example.murderhelp.global.error.ErrorCode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,6 +83,22 @@ public class Product {
 
         if (this.status == ProductStatus.SOLD_OUT) {
             this.status = ProductStatus.ON_SALE;
+        }
+    }
+
+    public void validateAccessibleBy(ProductTier memberTier) {
+        if (memberTier == null || !memberTier.canAccess(this.tier)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "접근할 수 없는 상품 등급입니다.");
+        }
+    }
+
+    public void validatePurchasable(int quantity) {
+        if (this.status != ProductStatus.ON_SALE) {
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_ON_SALE);
+        }
+
+        if (this.stockQuantity < quantity) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_STOCK);
         }
     }
 }
