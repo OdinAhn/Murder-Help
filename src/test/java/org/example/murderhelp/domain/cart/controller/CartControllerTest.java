@@ -19,6 +19,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -206,6 +209,175 @@ class CartControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void 로그인한_회원의_장바구니_목록과_상품_정보를_조회한다() throws Exception {
+        addItem(memberId, 101L, 2);
+
+        mockMvc.perform(
+                        get("/api/cart/items")
+                                .with(authenticatedMember(memberId))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").isNumber())
+                .andExpect(jsonPath("$.data[0].productId").value(101))
+                .andExpect(jsonPath("$.data[0].productCode").value("P001"))
+                .andExpect(jsonPath("$.data[0].name").value("Yellow Pistol"))
+                .andExpect(jsonPath("$.data[0].category").value("Guns"))
+                .andExpect(jsonPath("$.data[0].subCategory").value("Pistol"))
+                .andExpect(jsonPath("$.data[0].price").value(1_000))
+                .andExpect(jsonPath("$.data[0].tier").value("yellow"))
+                .andExpect(jsonPath("$.data[0].imageUrl").value("https://example.com/P001.jpg"))
+                .andExpect(jsonPath("$.data[0].status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data[0].stockQuantity").value(10))
+                .andExpect(jsonPath("$.data[0].quantity").value(2));
+    }
+
+    @Test
+    void 다른_회원의_장바구니_상품은_목록에_포함하지_않는다() throws Exception {
+        Long otherMemberId = saveMember("other-cart-member@example.com");
+        addItem(otherMemberId, 101L, 1);
+
+        mockMvc.perform(
+                        get("/api/cart/items")
+                                .with(authenticatedMember(memberId))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+    }
+
+    @Test
+    void 장바구니_상품의_수량을_변경한다() throws Exception {
+        addItem(memberId, 101L, 2);
+        Long cartItemId = findCartItemId(memberId, 101L);
+
+        mockMvc.perform(
+                        patch("/api/cart/items/{cartItemId}", cartItemId)
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"quantity": 5}
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(cartItemId))
+                .andExpect(jsonPath("$.data.productId").value(101))
+                .andExpect(jsonPath("$.data.quantity").value(5));
+
+        Integer quantity = jdbcTemplate.queryForObject(
+                "select quantity from cart_items where id = ?",
+                Integer.class,
+                cartItemId
+        );
+        assertThat(quantity).isEqualTo(5);
+    }
+
+    @Test
+    void 변경할_수량이_재고를_초과하면_거부한다() throws Exception {
+        addItem(memberId, 101L, 2);
+        Long cartItemId = findCartItemId(memberId, 101L);
+
+        mockMvc.perform(
+                        patch("/api/cart/items/{cartItemId}", cartItemId)
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"quantity": 11}
+                                        """)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRODUCT_002"));
+    }
+
+    @Test
+    void 변경할_수량이_1보다_작으면_거부한다() throws Exception {
+        addItem(memberId, 101L, 2);
+        Long cartItemId = findCartItemId(memberId, 101L);
+
+        mockMvc.perform(
+                        patch("/api/cart/items/{cartItemId}", cartItemId)
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"quantity": 0}
+                                        """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_001"))
+                .andExpect(jsonPath("$.message").value("장바구니 수량은 1 이상이어야 합니다."));
+    }
+
+    @Test
+    void 다른_회원의_장바구니_상품_수량은_변경할_수_없다() throws Exception {
+        Long otherMemberId = saveMember("other-cart-member@example.com");
+        addItem(otherMemberId, 101L, 1);
+        Long otherCartItemId = findCartItemId(otherMemberId, 101L);
+
+        mockMvc.perform(
+                        patch("/api/cart/items/{cartItemId}", otherCartItemId)
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"quantity": 2}
+                                        """)
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_001"));
+    }
+
+    @Test
+    void 장바구니_상품을_삭제한다() throws Exception {
+        addItem(memberId, 101L, 2);
+        Long cartItemId = findCartItemId(memberId, 101L);
+
+        mockMvc.perform(
+                        delete("/api/cart/items/{cartItemId}", cartItemId)
+                                .with(authenticatedMember(memberId))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
+
+        Integer itemCount = jdbcTemplate.queryForObject(
+                "select count(*) from cart_items where id = ?",
+                Integer.class,
+                cartItemId
+        );
+        assertThat(itemCount).isZero();
+    }
+
+    @Test
+    void 다른_회원의_장바구니_상품은_삭제할_수_없다() throws Exception {
+        Long otherMemberId = saveMember("other-cart-member@example.com");
+        addItem(otherMemberId, 101L, 1);
+        Long otherCartItemId = findCartItemId(otherMemberId, 101L);
+
+        mockMvc.perform(
+                        delete("/api/cart/items/{cartItemId}", otherCartItemId)
+                                .with(authenticatedMember(memberId))
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_001"));
+    }
+
+    @Test
+    void 인증하지_않은_사용자는_장바구니_목록_수량변경_삭제를_할_수_없다() throws Exception {
+        mockMvc.perform(get("/api/cart/items"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(
+                        patch("/api/cart/items/1")
+                                .contentType("application/json")
+                                .content("""
+                                        {"quantity": 2}
+                                        """)
+                )
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(delete("/api/cart/items/1"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private void addItem(Long targetMemberId, Long productId, int quantity) throws Exception {
         mockMvc.perform(
                         post("/api/cart/items")
@@ -226,6 +398,26 @@ class CartControllerTest {
                         List.of(new SimpleGrantedAuthority("ROLE_YELLOW"))
                 );
         return authentication(authentication);
+    }
+
+    private Long saveMember(String email) {
+        return memberRepository.saveAndFlush(
+                Member.builder()
+                        .email(email)
+                        .password("encoded-password")
+                        .name("다른 장바구니 회원")
+                        .phone("010-9999-9999")
+                        .build()
+        ).getId();
+    }
+
+    private Long findCartItemId(Long targetMemberId, Long productId) {
+        return jdbcTemplate.queryForObject(
+                "select id from cart_items where member_id = ? and product_id = ?",
+                Long.class,
+                targetMemberId,
+                productId
+        );
     }
 
     private void insertCategory(Long id, String name, Long parentId) {

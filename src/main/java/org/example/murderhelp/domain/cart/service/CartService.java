@@ -2,6 +2,8 @@ package org.example.murderhelp.domain.cart.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.cart.dto.CartItemAddRequest;
+import org.example.murderhelp.domain.cart.dto.CartItemDetailResponse;
+import org.example.murderhelp.domain.cart.dto.CartItemUpdateRequest;
 import org.example.murderhelp.domain.cart.dto.CartItemResponse;
 import org.example.murderhelp.domain.cart.entity.CartItem;
 import org.example.murderhelp.domain.cart.repository.CartItemRepository;
@@ -14,6 +16,8 @@ import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -41,5 +45,34 @@ public class CartService {
                 .orElseGet(() -> CartItem.create(member, product, request.quantity()));
 
         return CartItemResponse.from(cartItemRepository.save(cartItem));
+    }
+
+    @Transactional(readOnly = true)
+    public List<CartItemDetailResponse> getItems(Long memberId) {
+        return cartItemRepository.findAllByMember_IdOrderByCreatedAtAsc(memberId).stream()
+                .map(CartItemDetailResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public CartItemResponse updateItemQuantity(
+            Long memberId,
+            Long cartItemId,
+            CartItemUpdateRequest request
+    ) {
+        CartItem cartItem = getOwnedItem(memberId, cartItemId);
+        cartItem.changeQuantity(request.quantity());
+        return CartItemResponse.from(cartItem);
+    }
+
+    @Transactional
+    public void deleteItem(Long memberId, Long cartItemId) {
+        CartItem cartItem = getOwnedItem(memberId, cartItemId);
+        cartItemRepository.delete(cartItem);
+    }
+
+    private CartItem getOwnedItem(Long memberId, Long cartItemId) {
+        return cartItemRepository.findByIdAndMember_Id(cartItemId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
     }
 }

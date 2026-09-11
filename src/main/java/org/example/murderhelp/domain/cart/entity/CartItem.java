@@ -80,6 +80,12 @@ public class CartItem extends BaseTimeEntity {
         this.quantity = totalQuantity;
     }
 
+    public void changeQuantity(int quantity) {
+        validateQuantity(quantity);
+        this.product.validatePurchasable(quantity);
+        this.quantity = quantity;
+    }
+
     private static void validateQuantity(int quantity) {
         if (quantity < 1) {
             throw new IllegalArgumentException("장바구니 수량은 1 이상이어야 합니다.");
