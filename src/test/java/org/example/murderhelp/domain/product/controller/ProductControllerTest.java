@@ -5,12 +5,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.example.murderhelp.domain.product.entity.ProductStatus;
+import org.example.murderhelp.domain.product.repository.ProductRepository;
+import org.example.murderhelp.global.config.cache.CacheNames;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,8 +37,19 @@ class ProductControllerTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private CacheManager cacheManager;
+
+    @MockitoSpyBean
+    private ProductRepository productRepository;
+
     @BeforeEach
     void setUp() {
+        Cache productDetailCache = cacheManager.getCache(CacheNames.PRODUCT_DETAIL);
+        if (productDetailCache != null) {
+            productDetailCache.clear();
+        }
+
         jdbcTemplate.update("delete from product_specs");
         jdbcTemplate.update("delete from products");
         jdbcTemplate.update("delete from categories");
@@ -77,6 +96,20 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data.specs[0].value").value("가스 블로우백"))
                 .andExpect(jsonPath("$.data.specs[0].sortOrder").value(1))
                 .andExpect(jsonPath("$.data.specs[1].name").value("구성품"));
+    }
+
+    @Test
+    void 같은_사용자_티어의_상품_상세_반복_조회는_캐시를_사용한다() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(
+                            get("/api/products/101")
+                                    .with(user("purple-member").authorities(() -> "PURPLE"))
+                    )
+                    .andExpect(status().isOk());
+        }
+
+        verify(productRepository, times(1))
+                .findProductDetail(101L, ProductStatus.DISCONTINUED);
     }
 
     @Test

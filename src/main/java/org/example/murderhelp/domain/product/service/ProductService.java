@@ -24,6 +24,10 @@ public class ProductService {
 
     private final ProductRepository productRepository;
 
+    @Cacheable(
+            cacheNames = CacheNames.PRODUCT_DETAIL,
+            key = "'id:' + #productId + ':memberTier:' + #memberTier"
+    )
     @Transactional(readOnly = true)
     public ProductDetailResponse getProduct(ProductTier memberTier, Long productId) {
         Product product = productRepository
