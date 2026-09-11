@@ -47,6 +47,12 @@ export type ProductPage = {
   hasNext: boolean;
 };
 
+export type PopularSearch = {
+  rank: number;
+  keyword: string;
+  score: number;
+};
+
 function toProduct(raw: ApiProductResponse): ApiProduct {
   return {
     productId: raw.id,
@@ -118,4 +124,13 @@ export function searchProducts(params: {
   });
 
   return getPage(`/api/v1/products/search?${qs.toString()}`, params.memberTier);
+}
+
+/** GET /api/searches/popular — 오늘의 인기 검색어 조회 */
+export async function fetchPopularSearches(limit = 10): Promise<PopularSearch[]> {
+  const response = await fetch(`/api/searches/popular?limit=${limit}`);
+  if (!response.ok) throw new Error(`인기 검색어 조회에 실패했습니다 (${response.status})`);
+
+  const body = (await response.json()) as ApiEnvelope<PopularSearch[]>;
+  return body.data;
 }
