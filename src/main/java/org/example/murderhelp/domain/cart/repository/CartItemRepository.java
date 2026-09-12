@@ -14,5 +14,7 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
     @EntityGraph(attributePaths = {"product", "product.category", "product.category.parent"})
     List<CartItem> findAllByMember_IdOrderByCreatedAtAsc(Long memberId);
 
+    List<CartItem> findAllByMember_IdAndIdIn(Long memberId, List<Long> cartItemIds);
+
     Optional<CartItem> findByIdAndMember_Id(Long id, Long memberId);
 }

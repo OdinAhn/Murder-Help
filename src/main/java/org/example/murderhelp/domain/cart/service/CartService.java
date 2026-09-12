@@ -18,6 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -54,6 +58,23 @@ public class CartService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<CartItemResponse> getItems(Long memberId, List<Long> cartIds) {
+        List<Long> requestedIds = getDistinctIds(cartIds);
+        if (requestedIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<CartItem> cartItems = getOwnedItems(memberId, requestedIds);
+        Map<Long, CartItem> cartItemById = cartItems.stream()
+                .collect(Collectors.toMap(CartItem::getId, Function.identity()));
+
+        return requestedIds.stream()
+                .map(cartItemById::get)
+                .map(CartItemResponse::from)
+                .toList();
+    }
+
     @Transactional
     public CartItemResponse updateItemQuantity(
             Long memberId,
@@ -71,8 +92,34 @@ public class CartService {
         cartItemRepository.delete(cartItem);
     }
 
+    @Transactional
+    public void deleteItems(Long memberId, List<Long> cartItemIds) {
+        List<Long> requestedIds = getDistinctIds(cartItemIds);
+        if (requestedIds.isEmpty()) {
+            return;
+        }
+
+        List<CartItem> cartItems = getOwnedItems(memberId, requestedIds);
+        cartItemRepository.deleteAllInBatch(cartItems);
+    }
+
     private CartItem getOwnedItem(Long memberId, Long cartItemId) {
         return cartItemRepository.findByIdAndMember_Id(cartItemId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
+    }
+
+    private List<CartItem> getOwnedItems(Long memberId, List<Long> cartItemIds) {
+        List<CartItem> cartItems = cartItemRepository.findAllByMember_IdAndIdIn(memberId, cartItemIds);
+        if (cartItems.size() != cartItemIds.size()) {
+            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
+        }
+        return cartItems;
+    }
+
+    private List<Long> getDistinctIds(List<Long> ids) {
+        if (ids == null || ids.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("장바구니 상품 ID는 필수입니다.");
+        }
+        return ids.stream().distinct().toList();
     }
 }

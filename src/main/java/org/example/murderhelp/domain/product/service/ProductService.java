@@ -18,11 +18,25 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class ProductService {
 
     private final ProductRepository productRepository;
+
+    // 주문 도메인에서 요청하신 메서드입니다.
+    @Transactional
+    public List<Product> getProducts(List<Long> productIds) {
+        if (productIds == null || productIds.stream().anyMatch(id -> id == null)) {
+            throw new IllegalArgumentException("상품 ID는 필수입니다.");
+        }
+        if (productIds.isEmpty()) {
+            return List.of();
+        }
+        return productRepository.findAllByIdInForUpdate(productIds.stream().distinct().toList());
+    }
 
     @Cacheable(
             cacheNames = CacheNames.PRODUCT_DETAIL,
