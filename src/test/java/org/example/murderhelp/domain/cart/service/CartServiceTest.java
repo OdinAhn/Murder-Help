@@ -35,6 +35,9 @@ class CartServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private CartCacheEvictionService cartCacheEvictionService;
+
     @InjectMocks
     private CartService cartService;
 
@@ -78,6 +81,7 @@ class CartServiceTest {
         cartService.deleteItems(memberId, List.of(10L, 20L));
 
         verify(cartItemRepository).deleteAllInBatch(List.of(firstItem, secondItem));
+        verify(cartCacheEvictionService).evictCartItems(memberId);
     }
 
     @Test

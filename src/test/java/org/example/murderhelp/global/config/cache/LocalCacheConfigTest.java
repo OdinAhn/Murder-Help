@@ -17,10 +17,11 @@ class LocalCacheConfigTest {
     private CacheManager cacheManager;
 
     @Test
-    void shouldConfigureCaffeineCachesForProductSearchDetailAndList() {
+    void shouldConfigureCaffeineCachesForProductAndCart() {
         assertThat(cacheManager).isInstanceOf(CaffeineCacheManager.class);
         assertThat(cacheManager.getCache(CacheNames.PRODUCT_SEARCH)).isNotNull();
         assertThat(cacheManager.getCache(CacheNames.PRODUCT_DETAIL)).isNotNull();
         assertThat(cacheManager.getCache(CacheNames.PRODUCT_LIST)).isNotNull();
+        assertThat(cacheManager.getCache(CacheNames.CART_ITEMS)).isNotNull();
     }
 }

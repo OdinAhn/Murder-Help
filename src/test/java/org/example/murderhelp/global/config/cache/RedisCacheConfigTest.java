@@ -40,5 +40,11 @@ class RedisCacheConfigTest {
         assertThat(productListConfiguration).isNotNull();
         assertThat(productListConfiguration.getTtlFunction().getTimeToLive(null, null))
                 .isEqualTo(Duration.ofMinutes(3));
+
+        RedisCacheConfiguration cartItemsConfiguration = cacheManager.getCacheConfigurations()
+                .get(CacheNames.CART_ITEMS);
+        assertThat(cartItemsConfiguration).isNotNull();
+        assertThat(cartItemsConfiguration.getTtlFunction().getTimeToLive(null, null))
+                .isEqualTo(Duration.ofMinutes(1));
     }
 }

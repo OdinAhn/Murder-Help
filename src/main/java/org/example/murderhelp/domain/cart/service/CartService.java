@@ -12,8 +12,10 @@ import org.example.murderhelp.domain.member.repository.MemberRepository;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.product.entity.ProductTier;
 import org.example.murderhelp.domain.product.repository.ProductRepository;
+import org.example.murderhelp.global.config.cache.CacheNames;
 import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class CartService {
     private final CartItemRepository cartItemRepository;
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
+    private final CartCacheEvictionService cartCacheEvictionService;
 
     @Transactional
     public CartItemResponse addItem(Long memberId, CartItemAddRequest request) {
@@ -48,9 +51,12 @@ public class CartService {
                 })
                 .orElseGet(() -> CartItem.create(member, product, request.quantity()));
 
-        return CartItemResponse.from(cartItemRepository.save(cartItem));
+        CartItemResponse response = CartItemResponse.from(cartItemRepository.save(cartItem));
+        cartCacheEvictionService.evictCartItems(memberId);
+        return response;
     }
 
+    @Cacheable(cacheNames = CacheNames.CART_ITEMS, key = "'member:' + #memberId")
     @Transactional(readOnly = true)
     public List<CartItemDetailResponse> getItems(Long memberId) {
         return cartItemRepository.findAllByMember_IdOrderByCreatedAtAsc(memberId).stream()
@@ -83,13 +89,16 @@ public class CartService {
     ) {
         CartItem cartItem = getOwnedItem(memberId, cartItemId);
         cartItem.changeQuantity(request.quantity());
-        return CartItemResponse.from(cartItem);
+        CartItemResponse response = CartItemResponse.from(cartItem);
+        cartCacheEvictionService.evictCartItems(memberId);
+        return response;
     }
 
     @Transactional
     public void deleteItem(Long memberId, Long cartItemId) {
         CartItem cartItem = getOwnedItem(memberId, cartItemId);
         cartItemRepository.delete(cartItem);
+        cartCacheEvictionService.evictCartItems(memberId);
     }
 
     @Transactional
@@ -101,6 +110,7 @@ public class CartService {
 
         List<CartItem> cartItems = getOwnedItems(memberId, requestedIds);
         cartItemRepository.deleteAllInBatch(cartItems);
+        cartCacheEvictionService.evictCartItems(memberId);
     }
 
     private CartItem getOwnedItem(Long memberId, Long cartItemId) {
