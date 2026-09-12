@@ -21,6 +21,8 @@ import lombok.NoArgsConstructor;
 import org.example.murderhelp.domain.member.entity.Member;
 import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.global.entity.BaseTimeEntity;
+import org.example.murderhelp.global.error.BusinessException;
+import org.example.murderhelp.global.error.ErrorCode;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -73,7 +75,7 @@ public class Order extends BaseTimeEntity {
     @Size(max = 255)
     @Column(name = "delivery_request")
     private String deliveryRequest;
-
+  
     @Builder
     private Order(
             Member member,
@@ -113,6 +115,16 @@ public class Order extends BaseTimeEntity {
                 .substring(0, 8)
                 .toUpperCase();
         return "ORD-" + timestamp + "-" + randomUUID;
+    }
+  
+     // 상태 변경의 통로(세터 생성 X)
+    // 결제 확정이 중복되어도 여기서 막는다.
+    // 재고 중복 복구도 막는다.
+    public void transitTo(OrderStatus target) {
+        if (!this.status.canTransitTo(target)) {
+            throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+        }
+        this.status = target;
     }
 
 }
