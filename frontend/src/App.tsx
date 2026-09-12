@@ -67,7 +67,6 @@ function toCartProduct(item: CartItemDetailData): ApiProduct {
    여기에 담아 두었다가 로그인에 성공하면 이어서 실행한다. */
 type Pending =
   | { kind: "add"; id: string; qty: number }
-  | { kind: "buy"; id: string; qty: number }
   | { kind: "checkout" };
 
 /* ─── 화면 ───────────────────────────────────────────────── */
@@ -380,7 +379,6 @@ export default function App() {
       return;
     }
     putInCart(pending.id, pending.qty);
-    if (pending.kind === "buy") navigate({ name: "checkout" });
   }
 
   async function handleLogout() {
@@ -504,18 +502,6 @@ export default function App() {
       setShowLogin(true);
       return;
     }
-    navigate({ name: "checkout" });
-  }
-
-  function buyNow(id: string, qty: number) {
-    if (!userTier) {
-      setAfterLogin({ kind: "buy", id, qty });
-      setShowLogin(true);
-      return;
-    }
-    const p = productCache[id];
-    if (!p || !canAccess(userTier, p.tier)) return;
-    putInCart(id, qty);
     navigate({ name: "checkout" });
   }
 
@@ -959,7 +945,6 @@ export default function App() {
           p={detailProduct}
           onBack={() => navigate({ name: "list" })}
           onAddToCart={(qty) => addToCart(detailProduct.id, qty)}
-          onBuyNow={(qty) => buyNow(detailProduct.id, qty)}
         />
       )}
 

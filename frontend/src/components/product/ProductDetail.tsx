@@ -7,13 +7,12 @@ import { TierBadge } from "../member/TierBadge";
 
 /* ─── product detail ─────────────────────────────────────── */
 export function ProductDetail({
-  p, onBack, onAddToCart, onBuyNow,
+  p, onBack, onAddToCart,
 }: {
   p: Product;
   onBack: () => void;
   /* 서버 장바구니에 담긴 경우 true를 돌려준다. */
   onAddToCart: (qty: number) => Promise<boolean>;
-  onBuyNow: (qty: number) => void;
 }) {
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
@@ -139,25 +138,29 @@ export function ProductDetail({
 
           <div className="flex gap-3">
             <button
+              className="flex-1 py-3.5 text-sm font-bold uppercase tracking-widest transition-all"
+              style={{
+                border: `1px solid ${C.panelBorder}`,
+                color: C.text,
+                background: "rgba(0,0,0,0.4)",
+                fontFamily: "Share Tech Mono",
+              }}
+            >
+              리뷰보기
+            </button>
+            <button
               onClick={add}
               disabled={adding}
               className="flex-1 py-3.5 text-sm font-bold uppercase tracking-widest transition-all"
               style={{
-                border: `1px solid ${added ? t.color : C.panelBorder}`,
-                color: added ? t.brightColor : C.text,
-                background: "rgba(0,0,0,0.4)",
+                background: C.red,
+                color: "#fff",
+                border: `1px solid ${added ? t.brightColor : C.redBright}`,
                 fontFamily: "Share Tech Mono",
                 cursor: adding ? "wait" : "pointer",
               }}
             >
-              {adding ? "담는 중..." : added ? "담았습니다 ✓" : "장바구니에 담기"}
-            </button>
-            <button
-              onClick={() => onBuyNow(qty)}
-              className="flex-1 py-3.5 text-sm font-bold uppercase tracking-widest transition-all"
-              style={{ background: C.red, color: "#fff", border: `1px solid ${C.redBright}`, fontFamily: "Share Tech Mono" }}
-            >
-              결제하기 →
+              {adding ? "담는 중..." : added ? "담았습니다 ✓" : "장바구니에 담기 →"}
             </button>
           </div>
 
