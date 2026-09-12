@@ -19,7 +19,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.murderhelp.domain.member.entity.Member;
+import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.global.entity.BaseTimeEntity;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 @Getter
 @Entity
@@ -70,7 +75,8 @@ public class Order extends BaseTimeEntity {
     private String deliveryRequest;
 
     @Builder
-    public Order(
+    private Order(
+            Member member,
             String orderNumber,
             Long totalAmount,
             String receiverName,
@@ -78,6 +84,7 @@ public class Order extends BaseTimeEntity {
             String deliveryAddress,
             String deliveryRequest
     ) {
+        this.member = member;
         this.orderNumber = orderNumber;
         this.status = OrderStatus.PENDING_PAYMENT;
         this.totalAmount = totalAmount;
@@ -85,6 +92,27 @@ public class Order extends BaseTimeEntity {
         this.receiverPhone = receiverPhone;
         this.deliveryAddress = deliveryAddress;
         this.deliveryRequest = deliveryRequest;
+    }
+
+    public static Order create(Member member, Long totalAmount, CreateOrderRequest createOrderRequest) {
+        return Order.builder()
+                .member(member)
+                .orderNumber(generateOrderNumber())
+                .totalAmount(totalAmount)
+                .receiverName(createOrderRequest.receiverName())
+                .receiverPhone(createOrderRequest.receiverPhone())
+                .deliveryAddress(createOrderRequest.deliveryAddress())
+                .deliveryRequest(createOrderRequest.deliveryRequest())
+                .build();
+    }
+
+    public static String generateOrderNumber() {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String randomUUID = UUID.randomUUID().toString()
+                .replace("-", "")
+                .substring(0, 8)
+                .toUpperCase();
+        return "ORD-" + timestamp + "-" + randomUUID;
     }
 
 }

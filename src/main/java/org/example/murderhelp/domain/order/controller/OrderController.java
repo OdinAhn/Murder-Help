@@ -2,8 +2,11 @@ package org.example.murderhelp.domain.order.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
+import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
 import org.example.murderhelp.domain.order.dto.OrderListRequest;
 import org.example.murderhelp.domain.order.dto.OrderResponse;
+import org.example.murderhelp.domain.order.facade.OrderFacade;
 import org.example.murderhelp.domain.order.service.OrderService;
 import org.example.murderhelp.global.response.ApiResponse;
 import org.springframework.data.domain.Page;
@@ -13,6 +16,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderFacade orderFacade;
 
     @GetMapping
     public ApiResponse<Page<OrderResponse>> getOrderList(
@@ -42,6 +48,14 @@ public class OrderController {
             @PathVariable Long orderId
     ) {
         return ApiResponse.ok(orderService.getOrder(memberId, orderId));
+    }
+
+    @PostMapping
+    public ApiResponse<CreateOrderResponse> createOrder(
+            @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody CreateOrderRequest createOrderRequest
+    ) {
+        return ApiResponse.ok(orderFacade.createOrder(memberId, createOrderRequest));
     }
 
 }
