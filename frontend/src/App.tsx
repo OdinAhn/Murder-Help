@@ -20,6 +20,7 @@ import {
 import { NAV_ITEMS, SUBCATS, type Tier } from "./catalog";
 import { Gate } from "./components/auth/Gate";
 import { LoginModal } from "./components/auth/LoginModal";
+import { logout } from "./api/auth";
 import { CartView } from "./components/cart/CartView";
 import { FloatingChatWidget } from "./components/chat/FloatingChatWidget";
 import { Spinner } from "./components/common/Spinner";
@@ -382,13 +383,17 @@ export default function App() {
     if (pending.kind === "buy") navigate({ name: "checkout" });
   }
 
-  function handleLogout() {
-    setSession(null);
-    setActiveCodeTab("red");
-    setCart([]);
-    setCartItemIds({});
-    setCartError(null);
-    navigate({ name: "list" });
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSession(null);
+      setActiveCodeTab("red");
+      setCart([]);
+      navigate({ name: "list" });
+    }
   }
 
   function changeNav(cat: string) {

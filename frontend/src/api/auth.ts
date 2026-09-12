@@ -67,6 +67,29 @@ export async function login(email: string, password: string): Promise<Member> {
     return getMe();
 }
 
+export async function logout(): Promise<void> {
+    const token = accessToken;
+
+    try {
+        if (token) {
+            const response = await fetch("/api/auth/logout", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                credentials: "include",
+            });
+
+            if (!response.ok) {
+                throw new Error("로그아웃에 실패했습니다.");
+            }
+        }
+    } finally {
+        // accessToken은 브라우저 메모리 값이므로 항상 제거
+        accessToken = null;
+    }
+}
+
 export async function getMe(): Promise<Member> {
     if (!accessToken) {
         throw new Error("로그인이 필요합니다.");
