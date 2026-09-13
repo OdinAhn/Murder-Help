@@ -14,6 +14,7 @@ import org.example.murderhelp.domain.order.entity.OrderStatus;
 import org.example.murderhelp.domain.order.repository.OrderItemRepository;
 import org.example.murderhelp.domain.order.repository.OrderRepository;
 import org.example.murderhelp.domain.product.entity.Product;
+import org.example.murderhelp.domain.review.repository.ReviewRepository;
 import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
@@ -63,6 +64,9 @@ class OrderServiceTest {
     @Mock
     private MemberRepository memberRepository;
 
+    @Mock
+    private ReviewRepository reviewRepository;
+
     @Captor
     private ArgumentCaptor<Order> orderCaptor;
 
@@ -86,7 +90,7 @@ class OrderServiceTest {
 
         // then
         assertThat(result).isEmpty();
-        verify(orderItemRepository, never()).findAllWithReviewByOrderIdIn(anyList());
+        verify(orderItemRepository, never()).findAllByOrderIdIn(anyList());
     }
 
     @Test
@@ -120,7 +124,7 @@ class OrderServiceTest {
         OrderListRequest request = new OrderListRequest(OrderListPeriod.MONTH_3, null);
         when(orderRepository.findAllListPage(eq(1L), any(LocalDateTime.class), isNull(), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(order1, order2), pageable, 2));
-        when(orderItemRepository.findAllWithReviewByOrderIdIn(List.of(10L, 20L)))
+        when(orderItemRepository.findAllByOrderIdIn(List.of(10L, 20L)))
                 .thenReturn(List.of(orderItem1, orderItem2));
 
         // when

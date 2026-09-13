@@ -12,6 +12,8 @@ import org.example.murderhelp.domain.order.entity.OrderItem;
 import org.example.murderhelp.domain.order.repository.OrderItemRepository;
 import org.example.murderhelp.domain.order.repository.OrderRepository;
 import org.example.murderhelp.domain.product.entity.Product;
+import org.example.murderhelp.domain.review.entity.Review;
+import org.example.murderhelp.domain.review.repository.ReviewRepository;
 import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
 import org.springframework.data.domain.Page;
@@ -33,6 +35,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final MemberRepository memberRepository;
+    private final ReviewRepository reviewRepository;
 
     public Page<OrderResponse> getOrderList(Long memberId, OrderListRequest orderListRequest, Pageable pageable) {
         Page<Order> orderPage = orderRepository.findAllListPage(
@@ -50,15 +53,23 @@ public class OrderService {
                 .map(Order::getId)
                 .toList();
 
+        List<OrderItem> orderItemList = orderItemRepository.findAllByOrderIdIn(orderIds);
+
+        List<Long> orderItemIds = orderItemList.stream().map(OrderItem::getId).toList();
+
         Map<Long, List<OrderItem>> orderItemsMap =
-                orderItemRepository.findAllWithReviewByOrderIdIn(orderIds).stream()
+                orderItemList.stream()
                         .collect(Collectors.groupingBy(orderItem -> orderItem.getOrder().getId()));
+
+        Map<Long, Review> reviewMap =
+                reviewRepository.findAllByOrderItemIdIn(orderItemIds).stream()
+                        .collect(Collectors.toMap(Review::getOrderItemId, r -> r));
 
         return orderPage.map(order -> {
             List<OrderResponse.Item> items = orderItemsMap
                     .getOrDefault(order.getId(), List.of())
                     .stream()
-                    .map(OrderResponse.Item::from)
+                    .map(orderItem -> OrderResponse.Item.from(orderItem, reviewMap.get(orderItem.getId())))
                     .toList();
 
             return OrderResponse.from(order, items);

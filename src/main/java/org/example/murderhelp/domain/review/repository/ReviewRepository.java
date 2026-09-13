@@ -1,5 +1,6 @@
 package org.example.murderhelp.domain.review.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.example.murderhelp.domain.review.entity.Review;
@@ -12,4 +13,6 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     List<Review> findAllByMemberIdOrderByCreatedAtDesc(Long memberId);
 
     boolean existsByOrderItemId(Long orderItemId);
+
+    List<Review> findAllByOrderItemIdIn(Collection<Long> orderItemIds);
 }

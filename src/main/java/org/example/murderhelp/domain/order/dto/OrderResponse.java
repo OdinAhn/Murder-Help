@@ -4,6 +4,8 @@ import lombok.Builder;
 import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.entity.OrderItem;
 import org.example.murderhelp.domain.order.entity.OrderStatus;
+import org.example.murderhelp.domain.review.dto.ReviewResponse;
+import org.example.murderhelp.domain.review.entity.Review;
 
 import java.util.List;
 
@@ -35,13 +37,19 @@ public record OrderResponse(
     public record Item(
             String productName,
             Long unitPrice,
-            Integer quantity
+            Integer quantity,
+            ReviewResponse review
     ) {
         public static Item from(OrderItem orderItem) {
+            return from(orderItem, null);
+        }
+
+        public static Item from(OrderItem orderItem, Review review) {
             return new Item(
                     orderItem.getProductName(),
                     orderItem.getUnitPrice(),
-                    orderItem.getQuantity()
+                    orderItem.getQuantity(),
+                    review != null ? ReviewResponse.from(review) : null
             );
         }
     }
