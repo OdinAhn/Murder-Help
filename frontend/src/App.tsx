@@ -509,8 +509,8 @@ export default function App() {
     setActiveCodeTab(tier === "green" ? "red" : tier);
   }
 
-  function handleLogin(id: string, spent: number) {
-    applyMember(id, spent);
+  function handleLogin(id: string, spent: number, grade?: Tier) {
+    applyMember(id, spent, grade);
     setShowLogin(false);
 
     /* 서버 장바구니는 session 변경을 감지한 조회 effect에서 불러온다. */

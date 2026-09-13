@@ -1,4 +1,4 @@
-package org.example.murderhelp.domain.chat.dto;
+package org.example.murderhelp.domain.chat.bot.dto;
 
 import java.util.List;
 import lombok.Builder;

@@ -3,12 +3,11 @@ import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import ChatRoomView from "./ChatRoomView";
 import type { ChatRoomResponse } from "./chat.types";
-import { getAccessToken } from "../../api/client";
+import { getAccessToken } from "@/api/client.ts";
 
-export default function AdminChatDashboard() {
+export default function AdminChatDashboard({ adminId }: { adminId: number }) {
   const [rooms, setRooms] = useState<ChatRoomResponse[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
-  const ADMIN_ID = 999999; // 덤프 관리자 ID
   const stompClient = useRef<Client | null>(null);
 
   const [isError, setIsError] = useState(false);
@@ -137,7 +136,7 @@ export default function AdminChatDashboard() {
                   )}
                 </div>
                 <div className="flex-1 relative overflow-hidden">
-                  <ChatRoomView roomId={selectedRoomId} customerId={ADMIN_ID} isAdmin={true} />
+                  <ChatRoomView roomId={selectedRoomId} customerId={adminId} isAdmin={true} />
                 </div>
               </>
             );

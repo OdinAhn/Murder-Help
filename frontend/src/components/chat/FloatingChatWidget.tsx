@@ -29,7 +29,7 @@ export function FloatingChatWidget({ customerId, isAdmin }: { customerId: number
               >
                 ✕
               </button>
-              <AdminChatDashboard />
+              <AdminChatDashboard adminId={customerId} />
             </div>
           </div>
         ) : (

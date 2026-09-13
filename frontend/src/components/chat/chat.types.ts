@@ -15,6 +15,7 @@ export interface ChatMessageResponse {
   memberId: number;
   senderEmail: string;
   senderName: string;
+  senderGrade?: string;
   content: string;
   messageType: "TEXT" | "SYSTEM" | "BUTTON";
   createdAt: string;

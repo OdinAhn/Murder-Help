@@ -5,17 +5,18 @@ export function TierBadge({ tier, small }: { tier: Tier; small?: boolean }) {
   const t = TIERS[tier];
   return (
     <span
-      className="uppercase font-bold tracking-widest"
+      className="uppercase font-bold tracking-wider rounded-full flex items-center justify-center"
       style={{
-        fontFamily: "Share Tech Mono",
+        fontFamily: "Share Tech Mono, sans-serif",
         fontSize: small ? 9 : 10,
         color: t.brightColor,
-        border: `1px solid ${t.color}`,
-        padding: small ? "1px 4px" : "2px 6px",
-        background: `${t.color}18`,
+        padding: small ? "2px 6px" : "3px 8px",
+        background: `${t.color}25`,
+        border: `1px solid ${t.color}40`,
+        lineHeight: 1,
       }}
     >
-      {t.label.toUpperCase()}
+      {t.label}
     </span>
   );
 }

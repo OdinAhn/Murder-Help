@@ -1,15 +1,13 @@
 package org.example.murderhelp.domain.chat.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.murderhelp.domain.chat.constant.BotScenario;
+import org.example.murderhelp.domain.chat.bot.BotScenario;
 import org.example.murderhelp.domain.chat.dto.ChatMessageResponse;
 import org.example.murderhelp.domain.chat.dto.ChatMessageSendRequest;
-import org.example.murderhelp.domain.chat.dto.ChatRoomResponse;
 import org.example.murderhelp.domain.chat.entity.ChatMessage;
 import org.example.murderhelp.domain.chat.entity.ChatRoom;
 import org.example.murderhelp.domain.chat.entity.ChatRoomStatus;
 import org.example.murderhelp.domain.chat.entity.ChatMessageType;
-import org.example.murderhelp.domain.chat.redis.ChatRedisPublisher;
 import org.example.murderhelp.domain.chat.repository.ChatMessageRepository;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Page;
@@ -20,38 +18,27 @@ import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
 import org.example.murderhelp.domain.member.entity.Member;
 import org.example.murderhelp.domain.member.service.MemberService;
+import org.springframework.context.ApplicationEventPublisher;
+import org.example.murderhelp.domain.chat.event.ChatMessageCreatedEvent;
+import org.example.murderhelp.domain.chat.event.ChatRoomUpdatedEvent;
+import org.example.murderhelp.domain.chat.bot.BotCommandDispatcher;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ChatMessageService {
 
-    private final ChatMessageRepository chatMessageRepository;
     private final ChatRoomService chatRoomService;
-    private final ChatRedisPublisher chatRedisPublisher;
-    private final ObjectMapper objectMapper;
     private final MemberService memberService;
+    private final ChatMessageRepository chatMessageRepository;
+    private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
+    private final BotCommandDispatcher botCommandDispatcher;
 
     @Transactional
     public void sendBotWelcomeMessage(Long roomId) {
         ChatRoom room = chatRoomService.getRoomEntity(roomId);
-        
-        String botMessageJson;
-        try {
-            botMessageJson = objectMapper.writeValueAsString(BotScenario.WELCOME.getMessageDto());
-        } catch (Exception e) {
-            throw new RuntimeException("봇 웰컴 메시지 생성 실패", e);
-        }
-        
-        ChatMessage botMessage = ChatMessage.builder()
-                .chatRoom(room)
-                .sender(memberService.getSystemBotMember())
-                .content(botMessageJson)
-                .messageType(ChatMessageType.BUTTON)
-                .build();
-        
-        chatMessageRepository.save(botMessage);
-        chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(botMessage));
+        sendBotScenarioMessage(room, BotScenario.WELCOME);
     }
 
     @Transactional
@@ -64,104 +51,83 @@ public class ChatMessageService {
                 .content("[CLOSED] 상담이 완전히 종료되었습니다.")
                 .messageType(ChatMessageType.SYSTEM)
                 .build();
-                
+
+        // 종료 시스템 메시지 저장/발행
         chatMessageRepository.save(closeMsg);
-        chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(closeMsg));
+        publishMessageEvent(room.getId(), closeMsg);
     }
 
     @Transactional
     public void sendMessage(ChatMessageSendRequest request) {
-
         ChatRoom room = chatRoomService.getRoomEntity(request.roomId());
-
         Member sender = memberService.getMemberById(request.memberId());
-
         boolean isCustomer = room.isCustomer(sender.getId());
         
         if (!room.getStatus().canSendMessage(isCustomer)) {
             throw new BusinessException(ErrorCode.INVALID_CHAT_ROOM_STATUS);
         }
+
+        // 관리자 배정
         if (!isCustomer && room.getStatus() == ChatRoomStatus.WAITING && room.getAdmin() == null) {
             room.assignAdmin(sender);
-            // Redis Pub/Sub을 통해 관리자 대시보드로 상태 변경 브로드캐스트
-            chatRedisPublisher.publishRoomUpdate(ChatRoomResponse.from(room));
+            publishRoomUpdate(room);
         }
 
+        // 일반 사용자(고객) 메시지
         ChatMessage message = ChatMessage.builder()
                 .chatRoom(room)
                 .sender(sender)
                 .content(request.content())
                 .messageType(request.messageType() != null ? request.messageType() : ChatMessageType.TEXT)
                 .build();
-        
+
         chatMessageRepository.save(message);
+        publishMessageEvent(room.getId(), message);
 
-        ChatMessageResponse response = ChatMessageResponse.from(message);
-        chatRedisPublisher.publish(room.getId(), response);
-
-        // 챗봇 모드(BOT_MODE) 처리 로직
+        // 챗봇 메시지
         if (room.getStatus().isBotActive() && isCustomer) {
-            if ("상담사 연결".equals(request.content())) {
-                room.changeToWaiting();
-                chatRedisPublisher.publishRoomUpdate(ChatRoomResponse.from(room));
-                
-                ChatMessage botMsg = ChatMessage.builder()
-                    .chatRoom(room)
-                    .sender(memberService.getSystemBotMember())
-                    .content("상담사 연결을 대기 중입니다. 잠시만 기다려주세요.")
-                    .messageType(ChatMessageType.SYSTEM)
-                    .build();
-                chatMessageRepository.save(botMsg);
-                chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(botMsg));
-            } else if ("무기 추천".equals(request.content())) {
-                String recJson;
-                try {
-                    recJson = objectMapper.writeValueAsString(BotScenario.RECOMMEND_WEAPON.getMessageDto());
-                } catch (Exception e) {
-                    throw new RuntimeException("봇 메시지 생성 실패", e);
-                }
-                ChatMessage botMsg = ChatMessage.builder()
-                    .chatRoom(room)
-                    .sender(memberService.getSystemBotMember())
-                    .content(recJson)
-                    .messageType(ChatMessageType.BUTTON)
-                    .build();
-                chatMessageRepository.save(botMsg);
-                chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(botMsg));
-            } else if ("처음으로 돌아가기".equals(request.content())) {
-                String welcomeJson;
-                try {
-                    welcomeJson = objectMapper.writeValueAsString(BotScenario.WELCOME.getMessageDto());
-                } catch (Exception e) {
-                    throw new RuntimeException("봇 메시지 생성 실패", e);
-                }
-                ChatMessage botMsg = ChatMessage.builder()
-                    .chatRoom(room)
-                    .sender(memberService.getSystemBotMember())
-                    .content(welcomeJson)
-                    .messageType(ChatMessageType.BUTTON)
-                    .build();
-                chatMessageRepository.save(botMsg);
-                chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(botMsg));
-            } else {
-                String fallbackJson;
-                try {
-                    fallbackJson = objectMapper.writeValueAsString(BotScenario.FALLBACK.getMessageDto());
-                } catch (Exception e) {
-                    throw new RuntimeException("봇 메시지 생성 실패", e);
-                }
-                ChatMessage botMsg = ChatMessage.builder()
-                    .chatRoom(room)
-                    .sender(memberService.getSystemBotMember())
-                    .content(fallbackJson)
-                    .messageType(ChatMessageType.BUTTON)
-                    .build();
-                chatMessageRepository.save(botMsg);
-                chatRedisPublisher.publish(room.getId(), ChatMessageResponse.from(botMsg));
-            }
+            botCommandDispatcher.execute(room, request.content(), this);
         }
-
         chatRoomService.updateLastMessageTime(room.getId());
+    }
+
+
+    @Transactional
+    public void sendSystemMessage(ChatRoom room, String content) {
+        ChatMessage sysMsg = ChatMessage.builder()
+                .chatRoom(room)
+                .sender(memberService.getSystemBotMember())
+                .content(content)
+                .messageType(ChatMessageType.SYSTEM)
+                .build();
+        chatMessageRepository.save(sysMsg);
+        publishMessageEvent(room.getId(), sysMsg);
+    }
+
+    @Transactional
+    public void sendBotScenarioMessage(ChatRoom room, BotScenario scenario) {
+        try {
+            String json = objectMapper.writeValueAsString(scenario.getMessageDto());
+            ChatMessage botMsg = ChatMessage.builder()
+                    .chatRoom(room)
+                    .sender(memberService.getSystemBotMember())
+                    .content(json)
+                    .messageType(ChatMessageType.BUTTON)
+                    .build();
+
+            chatMessageRepository.save(botMsg);
+            publishMessageEvent(room.getId(), botMsg);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private void publishMessageEvent(Long roomId, ChatMessage message) {
+        eventPublisher.publishEvent(ChatMessageCreatedEvent.of(roomId, message));
+    }
+
+    public void publishRoomUpdate(ChatRoom room) {
+        eventPublisher.publishEvent(ChatRoomUpdatedEvent.from(room));
     }
 
     public Page<ChatMessageResponse> getMessageHistory(Long roomId, Pageable pageable) {

@@ -11,14 +11,16 @@ public record ChatMessageResponse(
     Long memberId,
     String senderEmail,
     String senderName,
+    String senderGrade,
     String content,
     ChatMessageType messageType,
     LocalDateTime createdAt
 ) {
     public static ChatMessageResponse from(ChatMessage chatMessage) {
-        Long memberId = chatMessage.getSender() != null ? chatMessage.getSender().getId() : null;
-        String senderEmail = chatMessage.getSender() != null ? chatMessage.getSender().getEmail() : null;
-        String senderName = chatMessage.getSender() != null ? chatMessage.getSender().getName() : null;
+        Long memberId = chatMessage.getSender().getId();
+        String senderEmail = chatMessage.getSender().getEmail();
+        String senderName = chatMessage.getSender().getName();
+        String senderGrade = chatMessage.getSender().getGrade().name();
 
         return new ChatMessageResponse(
             chatMessage.getId(),
@@ -26,6 +28,7 @@ public record ChatMessageResponse(
             memberId,
             senderEmail,
             senderName,
+            senderGrade,
             chatMessage.getContent(),
             chatMessage.getMessageType(),
             chatMessage.getCreatedAt()
