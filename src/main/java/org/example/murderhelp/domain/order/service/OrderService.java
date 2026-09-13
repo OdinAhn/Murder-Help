@@ -20,12 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -95,15 +92,7 @@ public class OrderService {
             totalAmount += product.getPrice() * cartItem.quantity();
         }
 
-        Order order = Order.builder()
-                .member(memberRepository.getReferenceById(memberId))
-                .orderNumber(generateOrderNumber())
-                .totalAmount(totalAmount)
-                .receiverName(createOrderRequest.receiverName())
-                .receiverPhone(createOrderRequest.receiverPhone())
-                .deliveryAddress(createOrderRequest.deliveryAddress())
-                .deliveryRequest(createOrderRequest.deliveryRequest())
-                .build();
+        Order order = Order.create(memberRepository.getReferenceById(memberId), totalAmount, createOrderRequest);
 
         List<OrderItem> orderItemList = cartItemList.stream()
                 .map(cartItem -> new OrderItem(
@@ -116,15 +105,6 @@ public class OrderService {
         orderRepository.save(order);
         orderItemRepository.saveAll(orderItemList);
         return CreateOrderResponse.from(order);
-    }
-
-    private String generateOrderNumber() {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        String randomUUID = UUID.randomUUID().toString()
-                .replace("-", "")
-                .substring(0, 8)
-                .toUpperCase();
-        return "ORD-" + timestamp + "-" + randomUUID;
     }
 
 }
