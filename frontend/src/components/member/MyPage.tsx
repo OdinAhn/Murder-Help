@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { getAccessToken } from "../../api/auth";
+import { authFetch } from "../../api/client";
 import { C } from "../../lib/theme";
 import { PageTitle } from "../common/PageTitle";
+import { MyOrders } from "./MyOrders";
 
 type Section = "home" | "orders" | "reviews";
 type Tab = "pending" | "written";
@@ -27,16 +28,7 @@ type WrittenReview = {
 };
 
 async function api<T>(url: string, options: RequestInit = {}): Promise<T> {
-    const token = getAccessToken();
-
-    const response = await fetch(url, {
-        ...options,
-        credentials: "include",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            ...options.headers,
-        },
-    });
+    const response = await authFetch(url, options);
 
     const body = (await response.json().catch(() => null)) as Api<T> | null;
 
@@ -213,16 +205,7 @@ export function MyPage({ onBack }: { onBack: () => void }) {
                         </>
                     )}
 
-                    {section === "orders" && (
-                        <>
-                            <PageTitle note="// 주문 조회 · 배송 상태 · 취소">
-                                My Orders
-                            </PageTitle>
-                            <p style={{ color: C.textMuted }}>
-                                주문 내역 화면을 이 영역에 연결하면 됩니다.
-                            </p>
-                        </>
-                    )}
+                    {section === "orders" && <MyOrders />}
 
                     {section === "reviews" && reviewView === "list" && (
                         <>
@@ -324,7 +307,7 @@ export function MyPage({ onBack }: { onBack: () => void }) {
                                 <>
                                     {written.length === 0 && (
                                         <p className="py-12 text-center" style={{ color: C.textMuted }}>
-                                            작성한 리뷰이 없습니다.
+                                            작성한 리뷰가 없습니다.
                                         </p>
                                     )}
 

@@ -1,3 +1,4 @@
+import type { Member } from "../api/auth";
 import type { Tier } from "../catalog";
 import { C } from "./theme";
 
@@ -20,6 +21,22 @@ export function tierFor(spent: number, id?: string): Tier {
   if (spent >= RED_AT) return "red";
   if (spent >= PURPLE_AT) return "purple";
   return "yellow";
+}
+
+/* 서버는 누적 구매금액 없이 등급만 내려준다. 화면의 등급 계산과 진행 바는 금액 기준이라
+   등급을 그 등급의 기준 금액으로 바꿔 쓴다. 로그인과 새로고침 복원에서 같이 쓴다. */
+export function spentFromGrade(grade: Member["grade"]) {
+  switch (grade) {
+    case "GREEN":
+      return 1_000_000;
+    case "RED":
+      return RED_AT;
+    case "PURPLE":
+      return PURPLE_AT;
+    case "YELLOW":
+    default:
+      return 0;
+  }
 }
 
 /* 다음 등급까지 남은 금액. 최고 등급이면 null */

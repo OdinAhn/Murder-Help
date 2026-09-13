@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { login, signup, type Member } from "../../api/auth";
 import { C } from "../../lib/theme";
+import { spentFromGrade } from "../../lib/tier";
 import { Spinner } from "../common/Spinner";
 
 type LoginModalProps = {
@@ -8,20 +9,6 @@ type LoginModalProps = {
   onLogin: (id: string, spent: number) => void;
   onClose: () => void;
 };
-
-function spentFromGrade(grade: Member["grade"]) {
-  switch (grade) {
-    case "GREEN":
-      return 1_000_000;
-    case "RED":
-      return 800_000;
-    case "PURPLE":
-      return 200_000;
-    case "YELLOW":
-    default:
-      return 0;
-  }
-}
 
 export function LoginModal({ onLogin, onClose }: LoginModalProps) {
   const [mode, setMode] = useState<"login" | "signup">("login");

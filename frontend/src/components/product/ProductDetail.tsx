@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Product } from "../../catalog";
+import type { ProductDetailData } from "../../api/products";
 import { C, krw } from "../../lib/theme";
 import { TIERS } from "../../lib/tier";
 import { QtyStepper } from "../common/QtyStepper";
@@ -9,7 +9,7 @@ import { TierBadge } from "../member/TierBadge";
 export function ProductDetail({
   p, onBack, onAddToCart,
 }: {
-  p: Product;
+  p: ProductDetailData;
   onBack: () => void;
   /* 서버 장바구니에 담긴 경우 true를 돌려준다. */
   onAddToCart: (qty: number) => Promise<boolean>;
@@ -19,6 +19,9 @@ export function ProductDetail({
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const t = TIERS[p.tier];
+  /* 재고가 0이 되면 서버가 SOLD_OUT 으로 바꾸지만, 둘 중 하나만 해당해도 품절로 본다 */
+  const soldOut = p.status === "SOLD_OUT" || p.stockQuantity <= 0;
+  const maxQty = Math.min(99, p.stockQuantity);
 
   useEffect(() => {
     setQty(1);
@@ -29,7 +32,7 @@ export function ProductDetail({
   }, [p.id]);
 
   async function add() {
-    if (adding) return;
+    if (adding || soldOut) return;
 
     setAdding(true);
     setAddError("");
@@ -100,8 +103,13 @@ export function ProductDetail({
             {p.name}
           </h1>
 
-          <div className="text-3xl font-bold mb-5" style={{ color: t.brightColor, fontFamily: "Share Tech Mono" }}>
-            {krw(p.price)}
+          <div className="flex items-baseline gap-3 mb-5">
+            <span className="text-3xl font-bold" style={{ color: t.brightColor, fontFamily: "Share Tech Mono" }}>
+              {krw(p.price)}
+            </span>
+            <span className="text-xs" style={{ color: soldOut ? C.redBright : C.textMuted, fontFamily: "Share Tech Mono" }}>
+              {soldOut ? "SOLD OUT · 품절" : `재고 ${p.stockQuantity}개`}
+            </span>
           </div>
 
           <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
@@ -130,7 +138,7 @@ export function ProductDetail({
             <span className="text-[10px] uppercase tracking-widest" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
               수량
             </span>
-            <QtyStepper qty={qty} onChange={setQty} />
+            <QtyStepper qty={qty} onChange={setQty} max={maxQty} />
             <span className="text-sm ml-auto" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
               합계 <span style={{ color: t.brightColor }}>{krw(p.price * qty)}</span>
             </span>
@@ -150,17 +158,17 @@ export function ProductDetail({
             </button>
             <button
               onClick={add}
-              disabled={adding}
+              disabled={adding || soldOut}
               className="flex-1 py-3.5 text-sm font-bold uppercase tracking-widest transition-all"
               style={{
-                background: C.red,
+                background: soldOut ? C.redDim : C.red,
                 color: "#fff",
-                border: `1px solid ${added ? t.brightColor : C.redBright}`,
+                border: `1px solid ${soldOut ? C.redDim : added ? t.brightColor : C.redBright}`,
                 fontFamily: "Share Tech Mono",
-                cursor: adding ? "wait" : "pointer",
+                cursor: soldOut ? "not-allowed" : adding ? "wait" : "pointer",
               }}
             >
-              {adding ? "담는 중..." : added ? "담았습니다 ✓" : "장바구니에 담기 →"}
+              {soldOut ? "품절된 상품입니다" : adding ? "담는 중..." : added ? "담았습니다 ✓" : "장바구니에 담기 →"}
             </button>
           </div>
 

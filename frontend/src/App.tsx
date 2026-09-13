@@ -20,7 +20,8 @@ import {
 import { NAV_ITEMS, SUBCATS, type Tier } from "./catalog";
 import { Gate } from "./components/auth/Gate";
 import { LoginModal } from "./components/auth/LoginModal";
-import { logout } from "./api/auth";
+import { getMe, logout } from "./api/auth";
+import { onAuthExpired, reissue } from "./api/client";
 import { CartView } from "./components/cart/CartView";
 import { FloatingChatWidget } from "./components/chat/FloatingChatWidget";
 import { Spinner } from "./components/common/Spinner";
@@ -33,10 +34,9 @@ import { OrderDone } from "./components/order/OrderDone";
 import { ProductCard } from "./components/product/ProductCard";
 import { ProductDetail } from "./components/product/ProductDetail";
 import { Sidebar } from "./components/product/Sidebar";
-import { ACCOUNTS } from "./lib/accounts";
 import { drop, read, SESSION_KEY, write } from "./lib/storage";
 import { C } from "./lib/theme";
-import { canAccess, TIERS, tierFor } from "./lib/tier";
+import { canAccess, spentFromGrade, TIERS, tierFor } from "./lib/tier";
 
 /* ─── 세션 ───────────────────────────────────────────────── */
 /* 등급은 저장하지 않는다. spent 에서 계산하므로 저장하면 두 값이 어긋난다. */
@@ -46,7 +46,14 @@ type Session = {
 };
 
 /* ─── 주문 ───────────────────────────────────────────────── */
-type CartLine = { id: string; qty: number };
+/* status · stockQuantity 는 서버 장바구니 조회로 채워진다.
+   상세 화면에서 막 담고 아직 다시 조회하지 않은 줄에는 없다. */
+type CartLine = {
+  id: string;
+  qty: number;
+  status?: CartItemDetailData["status"];
+  stockQuantity?: number;
+};
 
 function toCartProduct(item: CartItemDetailData): ApiProduct {
   return {
@@ -63,12 +70,6 @@ function toCartProduct(item: CartItemDetailData): ApiProduct {
   };
 }
 
-/* 장바구니 담기와 결제는 로그인이 필요하다. 비로그인 상태에서 누른 동작을
-   여기에 담아 두었다가 로그인에 성공하면 이어서 실행한다. */
-type Pending =
-  | { kind: "add"; id: string; qty: number }
-  | { kind: "checkout" };
-
 /* ─── 화면 ───────────────────────────────────────────────── */
 type View =
   | { name: "list" }
@@ -81,6 +82,9 @@ type View =
 /* ─── main app ───────────────────────────────────────────── */
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => read<Session | null>(SESSION_KEY, null));
+  /* 새로고침하면 session(localStorage)은 남지만 accessToken(메모리)은 사라진다.
+     저장된 세션이 있으면 토큰을 다시 받아 오기 전까지 API 를 호출하지 않는다. */
+  const [authReady, setAuthReady] = useState(session === null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartItemIds, setCartItemIds] = useState<Record<string, number>>({});
   const [cartLoading, setCartLoading] = useState(false);
@@ -89,8 +93,6 @@ export default function App() {
   const [cartPendingIds, setCartPendingIds] = useState<Set<string>>(() => new Set());
   const [view, setView] = useState<View>({ name: "list" });
   const [showLogin, setShowLogin] = useState(false);
-  /* 로그인이 필요해 막힌 동작. 로그인에 성공하면 이어서 실행한다 */
-  const [afterLogin, setAfterLogin] = useState<Pending | null>(null);
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
     const saved = read<Session | null>(SESSION_KEY, null);
     if (!saved) return "red";
@@ -109,11 +111,12 @@ export default function App() {
      상세조회에는 목록 API가 내려준 DB 상품 ID(productId)를 사용한다. */
   const [productCache, setProductCache] = useState<Record<string, ApiProduct>>({});
   const [listItems, setListItems] = useState<ApiProduct[]>([]);
-  const [listPage, setListPage] = useState(0);
+  const [listPage, setListPage] = useState(1);
   const [listHasNext, setListHasNext] = useState(false);
   const [listTotal, setListTotal] = useState(0);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState(false);
+  const [listMoreError, setListMoreError] = useState(false);
   const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -157,6 +160,8 @@ export default function App() {
 
   const isSearching = searchKeyword.length > 0;
 
+  /* 백엔드는 page=1 을 첫 페이지로 받는다(WebConfig 의 oneIndexedParameters).
+     page=0 도 첫 페이지로 처리되므로, 0부터 세면 '더 보기'에서 첫 페이지가 한 번 더 온다. */
   function requestPage(page: number) {
     return isSearching
       ? searchProducts({
@@ -178,17 +183,18 @@ export default function App() {
 
   /* 카테고리·등급 탭·정렬·검색어가 바뀌면 1페이지부터 새로 불러온다 */
   useEffect(() => {
-    if (!session || !userTier || view.name !== "list") return;
+    if (!session || !authReady || !userTier || view.name !== "list") return;
 
     let cancelled = false;
     setListLoading(true);
     setListError(false);
+    setListMoreError(false);
 
-    requestPage(0)
+    requestPage(1)
       .then((res) => {
         if (cancelled) return;
         setListItems(res.items);
-        setListPage(0);
+        setListPage(1);
         setListHasNext(res.hasNext);
         setListTotal(res.totalElements);
         cacheProducts(res.items);
@@ -208,12 +214,13 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
+  }, [session, authReady, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
 
   function loadMoreProducts() {
     if (!userTier || !listHasNext || listLoading) return;
     const nextPage = listPage + 1;
     setListLoading(true);
+    setListMoreError(false);
 
     requestPage(nextPage)
       .then((res) => {
@@ -222,13 +229,15 @@ export default function App() {
         setListHasNext(res.hasNext);
         cacheProducts(res.items);
       })
+      /* 이미 보이는 목록은 그대로 두고, 버튼 아래에 실패만 알려서 다시 누를 수 있게 한다 */
+      .catch(() => setListMoreError(true))
       .finally(() => setListLoading(false));
   }
 
   const detailProductId = view.name === "detail" ? Number(view.id) : null;
 
   useEffect(() => {
-    if (!session || !userTier || detailProductId === null) {
+    if (!session || !authReady || !userTier || detailProductId === null) {
       setDetailProduct(null);
       setDetailLoading(false);
       setDetailError(null);
@@ -263,7 +272,7 @@ export default function App() {
     return () => controller.abort();
     // cacheProducts는 상태 갱신 헬퍼이므로 상세조회 재실행 조건에서 제외한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, userTier, detailProductId, detailReloadKey]);
+  }, [session, authReady, userTier, detailProductId, detailReloadKey]);
 
   /* 장바구니는 로그인한 회원의 서버 데이터로 구성한다. */
   useEffect(() => {
@@ -274,6 +283,7 @@ export default function App() {
       setCartError(null);
       return;
     }
+    if (!authReady) return;
 
     let cancelled = false;
     setCartLoading(true);
@@ -289,7 +299,12 @@ export default function App() {
           for (const product of products) next[product.id] = product;
           return next;
         });
-        setCart(items.map((item) => ({ id: item.productCode, qty: item.quantity })));
+        setCart(items.map((item) => ({
+          id: item.productCode,
+          qty: item.quantity,
+          status: item.status,
+          stockQuantity: item.stockQuantity,
+        })));
         setCartItemIds(
           Object.fromEntries(items.map((item) => [item.productCode, item.id]))
         );
@@ -307,13 +322,58 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [session?.id, cartReloadKey]);
+  }, [session?.id, authReady, cartReloadKey]);
 
   /* 누적 구매금액이 올라가도 같은 자리에서 저장된다 */
   useEffect(() => {
     if (session) write(SESSION_KEY, session);
     else drop(SESSION_KEY);
   }, [session]);
+
+  /* 새로고침 직후 — refreshToken 쿠키로 accessToken 을 다시 받고, 회원 정보로 세션을 다시 맞춘다.
+     쿠키가 만료됐거나 없으면 저장된 세션도 쓸 수 없으므로 로그아웃 상태로 돌린다. */
+  useEffect(() => {
+    if (authReady) return;
+
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        await reissue();
+      } catch {
+        if (!cancelled) setSession(null);
+        return;
+      }
+
+      /* 등급은 로그인한 뒤에도 바뀔 수 있어서 저장된 값 대신 서버 값을 쓴다.
+         회원 정보 조회만 실패했다면 저장된 세션으로 계속 진행한다. */
+      try {
+        const member = await getMe();
+        if (!cancelled) applyMember(String(member.id), spentFromGrade(member.grade));
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    restoreSession().finally(() => {
+      if (!cancelled) setAuthReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // applyMember 는 상태 갱신 헬퍼라 재실행 조건에서 뺀다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady]);
+
+  /* 사용 중에 refreshToken 까지 만료되면(authFetch 가 재발급에 실패하면)
+     로그아웃 상태로 돌린다. 화면은 로그인 안내(Gate)로 바뀐다. */
+  useEffect(() => {
+    return onAuthExpired(() => {
+      setSession(null);
+      setActiveCodeTab("red");
+    });
+  }, []);
 
   /* ── 브라우저 히스토리 ──
      화면 전환을 히스토리에 남겨 뒤로/앞으로 가기(마우스 옆 버튼 포함)가 동작하게 한다. */
@@ -358,27 +418,20 @@ export default function App() {
     navigate({ name: "cart" });
   }
 
-  function handleLogin(id: string, spent: number) {
+  /* 로그인과 새로고침 복원 모두 서버 회원 정보로 세션을 만들고, 등급 탭을 내 등급으로 맞춘다 */
+  function applyMember(id: string, spent: number) {
     setSession({ id, spent });
     const tier = tierFor(spent, id);
     setActiveCodeTab(tier === "green" ? "red" : tier);
+  }
+
+  function handleLogin(id: string, spent: number) {
+    applyMember(id, spent);
     setShowLogin(false);
 
     /* 서버 장바구니는 session 변경을 감지한 조회 effect에서 불러온다. */
     setCart([]);
     setCartItemIds({});
-
-    /* 로그인 직전에 막혔던 동작을 이어서 실행한다.
-       이 시점에는 session 이 아직 갱신 전이라 로그인 검사를 다시 하지 않는다. */
-    const pending = afterLogin;
-    setAfterLogin(null);
-    if (!pending) return;
-
-    if (pending.kind === "checkout") {
-      navigate({ name: "checkout" });
-      return;
-    }
-    putInCart(pending.id, pending.qty);
   }
 
   async function handleLogout() {
@@ -406,27 +459,19 @@ export default function App() {
   const cartLines = cart
     .map((line) => {
       const p = productCache[line.id];
-      return p ? { p, qty: line.qty } : null;
+      return p ? { p, qty: line.qty, status: line.status, stockQuantity: line.stockQuantity } : null;
     })
-    .filter((l): l is { p: ApiProduct; qty: number } => l !== null);
+    .filter((l): l is NonNullable<typeof l> => l !== null);
 
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
 
-  function putInCart(id: string, qty: number) {
-    setCart((prev) => {
-      const found = prev.find((l) => l.id === id);
-      if (found) return prev.map((l) => (l.id === id ? { ...l, qty: Math.min(99, l.qty + qty) } : l));
-      return [...prev, { id, qty }];
-    });
-  }
+  /* 주문 생성 API는 상품이 아니라 장바구니 항목 ID로 주문한다 */
+  const cartLineIds = cartLines
+    .map(({ p }) => cartItemIds[p.id])
+    .filter((id): id is number => id !== undefined);
 
   /* 서버 장바구니에 담긴 경우에만 화면 장바구니에도 반영한다. */
   async function addToCart(id: string, qty: number): Promise<boolean> {
-    if (!userTier) {
-      setAfterLogin({ kind: "add", id, qty });
-      setShowLogin(true);
-      return false;
-    }
     /* 등급이 모자라면 담을 수 없다 */
     const p = productCache[id];
     if (!p || !canAccess(userTier, p.tier)) return false;
@@ -497,28 +542,16 @@ export default function App() {
 
   function goCheckout() {
     if (cartLines.length === 0) return;
-    if (!userTier) {
-      setAfterLogin({ kind: "checkout" });
-      setShowLogin(true);
-      return;
-    }
     navigate({ name: "checkout" });
   }
 
   function finishOrder(orderNo: string, total: number) {
+    /* 주문한 장바구니 항목은 서버가 지웠으므로 비우고 서버 기준으로 다시 불러온다 */
     setCart([]);
+    setCartItemIds({});
+    setCartReloadKey((key) => key + 1);
 
-    /* 결제금액을 누적해 등급을 다시 계산한다. 서버가 붙으면 이 누적은
-       서버가 하고 응답으로 내려주는 값을 쓰게 된다. */
-    if (session) {
-      const spent = session.spent + total;
-      ACCOUNTS[session.id].spent = spent;
-      setSession({ ...session, spent });
-      if (tierFor(spent, session.id) !== tierFor(session.spent, session.id)) {
-        const newTier = tierFor(spent, session.id);
-        setActiveCodeTab(newTier === "green" ? "red" : newTier);
-      }
-    }
+    /* 누적 구매금액과 등급은 서버가 관리하므로 화면에서 따로 계산하지 않는다. */
 
     /* 주문서를 완료 화면으로 대체한다 — 뒤로 가기로 비워진 주문서에 돌아가지 않도록 */
     navigate({ name: "done", orderNo, total }, true);
@@ -535,7 +568,7 @@ export default function App() {
       <style>{`@keyframes mh-spin { to { transform: rotate(360deg); } }`}</style>
 
       {showLogin && (
-        <LoginModal onLogin={handleLogin} onClose={() => { setShowLogin(false); setAfterLogin(null); }} />
+        <LoginModal onLogin={handleLogin} onClose={() => setShowLogin(false)} />
       )}
 
       {/* ── HEADER ─────────────────────────────────── */}
@@ -709,6 +742,24 @@ export default function App() {
 
         {menuOpen && (
           <div style={{ background: "rgba(12,0,0,0.98)", borderTop: `1px solid ${C.panelBorder}` }}>
+            {/* 모바일에서는 헤더에 검색창이 없으므로 메뉴 맨 위에 둔다. Enter 를 누르면 메뉴를 닫고 결과 목록으로 간다 */}
+            <div className="flex items-center gap-2 px-6 py-3" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  setMenuOpen(false);
+                  navigate({ name: "list" });
+                }}
+                placeholder="검색..."
+                className="flex-1 bg-transparent outline-none text-sm"
+                style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}
+              />
+            </div>
             {NAV_ITEMS.map((item) => (
               <button key={item} onClick={() => changeNav(item)}
                 className="block w-full text-left px-6 py-3 text-sm uppercase tracking-widest"
@@ -723,7 +774,22 @@ export default function App() {
       {/* 로그인 전에는 상품을 일절 보여주지 않는다 */}
       {!session && <Gate onLogin={() => setShowLogin(true)} />}
 
-      {session && onListPage && (
+      {/* 새로고침 직후 토큰을 다시 받아 오는 동안 */}
+      {session && !authReady && (
+        <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-20">
+          <div
+            className="flex items-center justify-center gap-3 py-20"
+            style={{ background: C.panel, border: `1px solid ${C.panelBorder}`, color: C.textDim }}
+          >
+            <Spinner color={C.redBright} />
+            <span className="text-xs" style={{ fontFamily: "Share Tech Mono" }}>
+              로그인 정보를 확인하는 중...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {session && authReady && onListPage && (
         <>
           {/* ── CODE TABS ──────────────────────────────── */}
           <div className="flex" style={{ background: "rgba(0,0,0,0.55)", borderBottom: `1px solid ${C.panelBorder}` }}>
@@ -850,7 +916,7 @@ export default function App() {
                       LOAD FAILED
                     </div>
                     <div className="text-xs" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-                      // 상품을 불러오지 못했습니다. 백엔드 서버 상태를 확인해 주세요.
+                      // 상품을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
                     </div>
                   </div>
                 ) : listItems.length > 0 ? (
@@ -886,6 +952,11 @@ export default function App() {
                     >
                       {listLoading ? "불러오는 중…" : "더 보기 →"}
                     </button>
+                    {listMoreError && (
+                      <p className="text-xs mt-3" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
+                        상품을 더 불러오지 못했습니다. 다시 시도해 주세요.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -968,11 +1039,11 @@ export default function App() {
         </div>
       )}
 
-      {session && view.name === "mypage" && (
+      {session && authReady && view.name === "mypage" && (
         <MyPage onBack={() => navigate({ name: "list" })} />
       )}
 
-      {session && view.name === "cart" && (
+      {session && authReady && view.name === "cart" && (
         <CartView
           lines={cartLines}
           loading={cartLoading}
@@ -986,10 +1057,10 @@ export default function App() {
         />
       )}
 
-      {session && view.name === "checkout" && (
+      {session && authReady && view.name === "checkout" && (
         <CheckoutView
           lines={cartLines}
-          userTier={userTier}
+          cartItemIds={cartLineIds}
           onBack={() => navigate({ name: "cart" })}
           onDone={finishOrder}
         />

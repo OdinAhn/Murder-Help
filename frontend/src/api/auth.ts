@@ -1,4 +1,6 @@
-﻿type ApiResponse<T> = {
+import { authFetch, getAccessToken, setAccessToken } from "./client";
+
+type ApiResponse<T> = {
     code: string;
     message?: string;
     data?: T;
@@ -15,8 +17,6 @@ export type Member = {
     phone: string;
     grade: "YELLOW" | "PURPLE" | "RED" | "GREEN";
 };
-
-let accessToken: string | null = null;
 
 async function parseApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
     const body = (await response.json().catch(() => null)) as ApiResponse<T> | null;
@@ -62,22 +62,16 @@ export async function login(email: string, password: string): Promise<Member> {
         throw new Error("액세스 토큰을 받지 못했습니다.");
     }
 
-    accessToken = body.data.accessToken;
+    setAccessToken(body.data.accessToken);
 
     return getMe();
 }
 
 export async function logout(): Promise<void> {
-    const token = accessToken;
-
     try {
-        if (token) {
-            const response = await fetch("/api/auth/logout", {
+        if (getAccessToken()) {
+            const response = await authFetch("/api/auth/logout", {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                credentials: "include",
             });
 
             if (!response.ok) {
@@ -86,21 +80,12 @@ export async function logout(): Promise<void> {
         }
     } finally {
         // accessToken은 브라우저 메모리 값이므로 항상 제거
-        accessToken = null;
+        setAccessToken(null);
     }
 }
 
 export async function getMe(): Promise<Member> {
-    if (!accessToken) {
-        throw new Error("로그인이 필요합니다.");
-    }
-
-    const response = await fetch("/api/members/me", {
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-        },
-        credentials: "include",
-    });
+    const response = await authFetch("/api/members/me");
 
     const body = await parseApiResponse<Member>(response);
 
@@ -109,8 +94,4 @@ export async function getMe(): Promise<Member> {
     }
 
     return body.data;
-}
-
-export function getAccessToken(): string | null {
-    return accessToken;
 }

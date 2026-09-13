@@ -1,5 +1,5 @@
 import type { Product, Tier } from "../catalog";
-import { getAccessToken } from "./auth";
+import { authFetch } from "./client";
 
 export const PAGE_SIZE = 12;
 
@@ -63,20 +63,9 @@ function toProduct(raw: ApiProductResponse): ApiProduct {
   };
 }
 
-function getAuthorizationHeaders(): HeadersInit {
-  const accessToken = getAccessToken();
-  if (!accessToken) throw new Error("로그인이 필요합니다.");
-
-  return {
-    Accept: "application/json",
-    Authorization: `Bearer ${accessToken}`,
-  };
-}
-
 async function getPage(url: string): Promise<ProductPage> {
-  const res = await fetch(url, {
-    headers: getAuthorizationHeaders(),
-    credentials: "include",
+  const res = await authFetch(url, {
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`상품 조회에 실패했습니다 (${res.status})`);
 
@@ -134,9 +123,8 @@ export function searchProducts(params: {
 
 /** GET /api/searches/popular — 오늘의 인기 검색어 조회 */
 export async function fetchPopularSearches(limit = 10): Promise<PopularSearch[]> {
-  const response = await fetch(`/api/searches/popular?limit=${limit}`, {
-    headers: getAuthorizationHeaders(),
-    credentials: "include",
+  const response = await authFetch(`/api/searches/popular?limit=${limit}`, {
+    headers: { Accept: "application/json" },
   });
   if (!response.ok) throw new Error(`인기 검색어 조회에 실패했습니다 (${response.status})`);
 
@@ -178,9 +166,8 @@ export async function fetchProductDetail(
   productId: number,
   signal: AbortSignal,
 ): Promise<ProductDetailData> {
-  const response = await fetch(`/api/products/${productId}`, {
-    headers: getAuthorizationHeaders(),
-    credentials: "include",
+  const response = await authFetch(`/api/products/${productId}`, {
+    headers: { Accept: "application/json" },
     signal,
   });
   const body = await response.json().catch(() => null) as ApiEnvelope<ProductDetailApiResponse> | null;

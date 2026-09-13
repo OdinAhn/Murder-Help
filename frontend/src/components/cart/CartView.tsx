@@ -1,3 +1,4 @@
+import type { CartItemDetailData } from "../../api/cart";
 import type { Product } from "../../catalog";
 import { C, krw } from "../../lib/theme";
 import { TIERS } from "../../lib/tier";
@@ -8,10 +9,25 @@ import { SummaryRow } from "../common/SummaryRow";
 import { TierBadge } from "../member/TierBadge";
 
 /* ─── cart ───────────────────────────────────────────────── */
+type CartViewLine = {
+  p: Product;
+  qty: number;
+  status?: CartItemDetailData["status"];
+  stockQuantity?: number;
+};
+
+/* 주문하면 서버가 거절할 줄을 미리 알려 준다 — 판매 중이 아니거나, 담은 수량이 재고보다 많다 */
+function problemOf(line: CartViewLine): string | null {
+  if (line.status === "SOLD_OUT") return "품절";
+  if (line.status === "DISCONTINUED") return "판매 중지";
+  if (line.stockQuantity !== undefined && line.qty > line.stockQuantity) return `재고 ${line.stockQuantity}개`;
+  return null;
+}
+
 export function CartView({
   lines, loading, error, pendingIds, onQty, onRemove, onRetry, onContinue, onCheckout,
 }: {
-  lines: { p: Product; qty: number }[];
+  lines: CartViewLine[];
   loading: boolean;
   error: string | null;
   pendingIds: Set<string>;
@@ -22,6 +38,7 @@ export function CartView({
   onCheckout: () => void;
 }) {
   const itemsTotal = lines.reduce((sum, l) => sum + l.p.price * l.qty, 0);
+  const hasProblem = lines.some((line) => problemOf(line) !== null);
 
   return (
     <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8">
@@ -73,8 +90,10 @@ export function CartView({
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* 목록 */}
           <div className="flex-1 w-full" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-            {lines.map(({ p, qty }) => {
+            {lines.map((line) => {
+              const { p, qty } = line;
               const pending = pendingIds.has(p.id);
+              const problem = problemOf(line);
 
               return (
               <div
@@ -94,6 +113,14 @@ export function CartView({
                       {p.id}
                     </span>
                     <TierBadge tier={p.tier} small />
+                    {problem && (
+                      <span
+                        className="text-[9px] font-bold px-1"
+                        style={{ color: "#fff", background: C.redDim, fontFamily: "Share Tech Mono" }}
+                      >
+                        {problem}
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm truncate" style={{ color: C.text, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>
                     {p.name}
@@ -103,7 +130,7 @@ export function CartView({
                   </div>
                 </div>
                 <div style={{ pointerEvents: pending ? "none" : "auto" }}>
-                  <QtyStepper qty={qty} onChange={(n) => void onQty(p.id, n)} />
+                  <QtyStepper qty={qty} onChange={(n) => void onQty(p.id, n)} max={Math.min(99, line.stockQuantity ?? 99)} />
                 </div>
                 <div
                   className="text-sm font-bold text-right shrink-0"
@@ -139,10 +166,22 @@ export function CartView({
                 {krw(itemsTotal)}
               </span>
             </div>
+            {hasProblem && (
+              <p className="text-xs mt-3" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
+                품절 · 재고 부족 상품을 빼거나 수량을 줄인 뒤 결제해 주세요.
+              </p>
+            )}
             <button
               onClick={onCheckout}
+              disabled={hasProblem}
               className="w-full py-3.5 mt-3 text-sm font-bold uppercase tracking-widest"
-              style={{ background: C.red, color: "#fff", border: `1px solid ${C.redBright}`, fontFamily: "Share Tech Mono" }}
+              style={{
+                background: hasProblem ? C.redDim : C.red,
+                color: "#fff",
+                border: `1px solid ${hasProblem ? C.redDim : C.redBright}`,
+                fontFamily: "Share Tech Mono",
+                cursor: hasProblem ? "not-allowed" : "pointer",
+              }}
             >
               결제하기 →
             </button>

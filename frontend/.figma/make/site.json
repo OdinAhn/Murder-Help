@@ -1,5 +1,6 @@
 {
   "title": "MurderHelp",
+  "language": "ko",
   "description": "An online store offering a variety of firearms, weapons, and bombs with intuitive navigation for enthusiasts seeking specialized armaments.",
   "robots": {
     "index": false

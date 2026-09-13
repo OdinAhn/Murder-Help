@@ -1,4 +1,4 @@
-import { getAccessToken } from "./auth";
+import { authFetch } from "./client";
 
 type ApiResponse<T> = {
   code: string;
@@ -24,13 +24,9 @@ export type CartItemDetailData = CartItemData & {
   stockQuantity: number;
 };
 
-function getAuthorizationHeaders(contentType = false): HeadersInit {
-  const accessToken = getAccessToken();
-  if (!accessToken) throw new Error("로그인이 필요합니다.");
-
+function jsonHeaders(contentType = false): HeadersInit {
   return {
     Accept: "application/json",
-    Authorization: `Bearer ${accessToken}`,
     ...(contentType ? { "Content-Type": "application/json" } : {}),
   };
 }
@@ -46,17 +42,9 @@ async function parseData<T>(response: Response, fallbackMessage: string): Promis
 
 /** POST /api/cart/items — 로그인한 회원의 장바구니에 상품 추가 */
 export async function addCartItem(productId: number, quantity: number): Promise<CartItemData> {
-  const accessToken = getAccessToken();
-  if (!accessToken) throw new Error("로그인이 필요합니다.");
-
-  const response = await fetch("/api/cart/items", {
+  const response = await authFetch("/api/cart/items", {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
+    headers: jsonHeaders(true),
     body: JSON.stringify({ productId, quantity }),
   });
 
@@ -70,9 +58,8 @@ export async function addCartItem(productId: number, quantity: number): Promise<
 
 /** GET /api/cart/items — 로그인한 회원의 장바구니 목록 조회 */
 export async function fetchCartItems(): Promise<CartItemDetailData[]> {
-  const response = await fetch("/api/cart/items", {
-    headers: getAuthorizationHeaders(),
-    credentials: "include",
+  const response = await authFetch("/api/cart/items", {
+    headers: jsonHeaders(),
   });
 
   return parseData(response, "장바구니를 불러오지 못했습니다");
@@ -83,10 +70,9 @@ export async function updateCartItemQuantity(
   cartItemId: number,
   quantity: number,
 ): Promise<CartItemData> {
-  const response = await fetch(`/api/cart/items/${cartItemId}`, {
+  const response = await authFetch(`/api/cart/items/${cartItemId}`, {
     method: "PATCH",
-    headers: getAuthorizationHeaders(true),
-    credentials: "include",
+    headers: jsonHeaders(true),
     body: JSON.stringify({ quantity }),
   });
 
@@ -95,10 +81,9 @@ export async function updateCartItemQuantity(
 
 /** DELETE /api/cart/items/{id} — 장바구니 상품 삭제 */
 export async function deleteCartItem(cartItemId: number): Promise<void> {
-  const response = await fetch(`/api/cart/items/${cartItemId}`, {
+  const response = await authFetch(`/api/cart/items/${cartItemId}`, {
     method: "DELETE",
-    headers: getAuthorizationHeaders(),
-    credentials: "include",
+    headers: jsonHeaders(),
   });
 
   const body = (await response.json().catch(() => null)) as ApiResponse<void> | null;

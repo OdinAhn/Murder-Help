@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { placeOrder, type Receiver } from "../../api/orders";
-import type { Product, Tier } from "../../catalog";
+import { createOrder, type Receiver } from "../../api/orders";
+import type { Product } from "../../catalog";
 import { C, krw } from "../../lib/theme";
 import { FREE_SHIPPING_OVER, SHIPPING_FEE } from "../../lib/shipping";
 import { Field } from "../common/Field";
@@ -10,10 +10,11 @@ import { SummaryRow } from "../common/SummaryRow";
 
 /* ─── checkout ───────────────────────────────────────────── */
 export function CheckoutView({
-  lines, userTier, onBack, onDone,
+  lines, cartItemIds, onBack, onDone,
 }: {
   lines: { p: Product; qty: number }[];
-  userTier: Tier | null;
+  /* 주문 생성 API에 보낼 장바구니 항목 ID */
+  cartItemIds: number[];
   onBack: () => void;
   onDone: (orderNo: string, total: number) => void;
 }) {
@@ -39,18 +40,19 @@ export function CheckoutView({
     setBusy(true);
     setError("");
     try {
-      const { orderNo } = await placeOrder({
-        items: lines.map(({ p, qty }) => ({ id: p.id, name: p.name, price: p.price, qty })),
-        itemsTotal,
-        shipping,
-        total,
-        receiver: r,
-        memberTier: userTier,
+      const order = await createOrder({
+        cartItemIds,
+        receiverName: r.name.trim(),
+        receiverPhone: r.phone.trim(),
+        /* 백엔드는 주소를 한 필드로 받으므로 우편번호 · 주소 · 상세 주소를 이어 붙인다 */
+        deliveryAddress: [r.postcode, r.address, r.detail].map((v) => v.trim()).filter(Boolean).join(" "),
+        deliveryRequest: r.memo.trim() || undefined,
       });
-      onDone(orderNo, total);
-    } catch {
+      /* 완료 화면에는 서버가 확정한 주문번호와 금액을 쓴다 */
+      onDone(order.orderNumber, order.totalAmount);
+    } catch (error) {
       setBusy(false);
-      setError("주문을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setError(error instanceof Error ? error.message : "주문을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }
 
