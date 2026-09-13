@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import {ReactNode, useEffect, useState} from "react";
 import {
   addCartItem,
   deleteCartItem,
@@ -17,7 +17,7 @@ import {
   type PopularSearch,
   type ProductDetailData,
 } from "./api/products";
-import { NAV_ITEMS, SUBCATS, type Tier } from "./catalog";
+import {NAV_ITEMS, Product, SUBCATS, type Tier} from "./catalog";
 import { Gate } from "./components/auth/Gate";
 import { LoginModal } from "./components/auth/LoginModal";
 import { getMe, logout } from "./api/auth";
@@ -43,6 +43,7 @@ import { canAccess, spentFromGrade, TIERS, tierFor } from "./lib/tier";
 type Session = {
   id: string;
   spent: number;
+  grade?: Tier;
 };
 
 /* ─── 주문 ───────────────────────────────────────────────── */
@@ -79,7 +80,81 @@ type View =
   | { name: "done"; orderNo: string; total: number }
   | { name: "mypage" };
 
-/* ─── main app ───────────────────────────────────────────── */
+/* ─── 공통 조각 ──────────────────────────────────────────── */
+function Field({
+  label, value, onChange, placeholder, type = "text",
+}: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] uppercase tracking-widest mb-1.5" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
+        {label}
+      </span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-4 py-3 text-sm outline-none"
+        style={{
+          background: "rgba(0,0,0,0.45)",
+          border: `1px solid ${C.panelBorder}`,
+          color: C.text,
+          fontFamily: "Noto Sans KR, sans-serif",
+        }}
+      />
+    </label>
+  );
+}
+
+function QtyStepper({ qty, onChange }: { qty: number; onChange: (n: number) => void }) {
+  const btn = {
+    width: 32,
+    height: 32,
+    border: `1px solid ${C.panelBorder}`,
+    color: C.textDim,
+    fontFamily: "Share Tech Mono",
+    background: "rgba(0,0,0,0.4)",
+  };
+  return (
+    <div className="flex items-center">
+      <button type="button" onClick={() => onChange(Math.max(1, qty - 1))} style={btn} aria-label="수량 줄이기">−</button>
+      <span className="text-sm text-center" style={{ width: 46, color: C.text, fontFamily: "Share Tech Mono" }}>
+        {qty}
+      </span>
+      <button type="button" onClick={() => onChange(Math.min(99, qty + 1))} style={btn} aria-label="수량 늘리기">+</button>
+    </div>
+  );
+}
+
+function PageTitle({ children, note }: { children: ReactNode; note?: string }) {
+  return (
+    <div className="mb-6">
+      <h1
+        className="font-bold uppercase leading-none mb-2"
+        style={{ fontFamily: "Cinzel, serif", fontSize: "clamp(20px,3vw,32px)", color: C.text }}
+      >
+        {children}
+      </h1>
+      {note && (
+        <p className="text-xs" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-baseline py-1.5">
+      <span className="text-xs" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif" }}>{label}</span>
+      <span className="text-sm" style={{ color: C.text, fontFamily: "Share Tech Mono" }}>{value}</span>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => read<Session | null>(SESSION_KEY, null));
   /* 새로고침하면 session(localStorage)은 남지만 accessToken(메모리)은 사라진다.
@@ -96,15 +171,24 @@ export default function App() {
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
     const saved = read<Session | null>(SESSION_KEY, null);
     if (!saved) return "red";
-    const tier = tierFor(saved.spent, saved.id);
+    const tier = saved.grade ?? tierFor(saved.spent, saved.id);
     return tier === "green" ? "red" : tier;
   });
 
-  /* 등급은 저장된 값이 아니라 누적 구매금액에서 계산한다 */
-  const userTier: Tier | null = session ? tierFor(session.spent, session.id) : null;
+  /* 등급은 DB 값을 우선으로 하고, 없을 경우 누적 구매금액에서 계산한다 */
+  const userTier: Tier | null = session ? (session.grade ?? tierFor(session.spent, session.id)) : null;
   const [activeNav, setActiveNav] = useState("Guns");
   const [activeSub, setActiveSub] = useState("전체");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [knownProducts, setKnownProducts] = useState<Product[]>([]);
+  const [productSort, setProductSort] = useState<ApiProductSort>("POPULAR");
+  const [productPage, setProductPage] = useState(1);
+  const [productTotal, setProductTotal] = useState(0);
+  const [hasNextProducts, setHasNextProducts] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [productReloadKey, setProductReloadKey] = useState(0);
 
   /* ── 상품 목록/검색/상세 (백엔드 연동) ──
      상품 코드는 기존 화면과 장바구니 식별자로 유지하고,
@@ -419,9 +503,9 @@ export default function App() {
   }
 
   /* 로그인과 새로고침 복원 모두 서버 회원 정보로 세션을 만들고, 등급 탭을 내 등급으로 맞춘다 */
-  function applyMember(id: string, spent: number) {
-    setSession({ id, spent });
-    const tier = tierFor(spent, id);
+   function handleLogin(id: string, spent: number, grade?: Tier) {
+    setSession({ id, spent, grade });
+    const tier = grade ?? tierFor(spent, id);
     setActiveCodeTab(tier === "green" ? "red" : tier);
   }
 
@@ -557,8 +641,10 @@ export default function App() {
     navigate({ name: "done", orderNo, total }, true);
   }
 
-  /* 카테고리·등급 탭·검색 필터링은 백엔드(/api/products, /api/v1/products/search)가
-     이미 적용해서 내려준다. listItems는 그 결과를 그대로 담는다. */
+  /* 카테고리, 서브 카테고리, 등급, 정렬 조건은 백엔드가 적용한다. */
+  const filtered = products;
+
+  
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -1117,7 +1203,7 @@ export default function App() {
           </div>
         </div>
       </footer>
-      {session && <FloatingChatWidget customerId={1} isAdmin={userTier === "green"} />}
+      {session && <FloatingChatWidget customerId={Number(session.id)} isAdmin={userTier === "green"} />}
     </div>
   );
 }

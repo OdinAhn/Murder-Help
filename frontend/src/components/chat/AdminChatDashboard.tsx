@@ -3,6 +3,7 @@ import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import ChatRoomView from "./ChatRoomView";
 import type { ChatRoomResponse } from "./chat.types";
+import { getAccessToken } from "../../api/client";
 
 export default function AdminChatDashboard() {
   const [rooms, setRooms] = useState<ChatRoomResponse[]>([]);
@@ -10,19 +11,35 @@ export default function AdminChatDashboard() {
   const ADMIN_ID = 999999; // 덤프 관리자 ID
   const stompClient = useRef<Client | null>(null);
 
+  const [isError, setIsError] = useState(false);
+
   useEffect(() => {
     // 1. 최초 1회만 REST로 기존 채팅방 목록 조회
-    fetch(`/api/chat/rooms?page=0&size=100`)
-      .then(res => res.json())
+    fetch(`/api/chat/rooms?page=0&size=100`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`
+      }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("방 목록 조회 실패");
+        return res.json();
+      })
       .then(json => {
         if (json.data && json.data.content) {
           setRooms(json.data.content);
         }
+      })
+      .catch(err => {
+        console.warn("방 목록 조회 에러:", err);
+        setIsError(true);
       });
 
     // 2. STOMP 구독으로 새 채팅방/상태 변경을 실시간 수신
     const client = new Client({
       webSocketFactory: () => new SockJS("/ws"),
+      connectHeaders: {
+        Authorization: `Bearer ${getAccessToken()}`
+      },
       reconnectDelay: 5000,
       onConnect: () => {
         client.subscribe("/sub/chat/rooms/updates", (msg) => {
@@ -54,10 +71,15 @@ export default function AdminChatDashboard() {
       {/* 왼쪽: 채팅방 리스트 */}
       <div className="w-1/3 border-r border-[#333] flex flex-col bg-[#050505]">
         <div className="p-4 border-b border-[#333] bg-[#111]">
-          <h2 className="text-lg font-bold text-[#10b981] font-mono tracking-widest">HQ COMMS</h2>
+          <h2 className="text-lg font-bold text-[#10b981] font-mono tracking-widest">SUPPORT DESK</h2>
           <p className="text-xs text-gray-500 mt-1">Total Active Signals: {rooms.filter(r => r.status !== 'COMPLETED').length}</p>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {isError && (
+            <div className="p-4 text-center text-[#ff4422] text-xs font-mono bg-[#2a0804] border-b border-[#5a1005] leading-relaxed">
+              Failed to intercept communications.<br />System offline.
+            </div>
+          )}
           {rooms.map(room => (
             <div 
               key={room.roomId}
@@ -86,24 +108,40 @@ export default function AdminChatDashboard() {
       {/* 오른쪽: 채팅 화면 */}
       <div className="flex-1 bg-[#0a0a0a] flex flex-col relative">
         {selectedRoomId ? (
-          <>
-            <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#111] z-10">
-              <h3 className="font-bold text-[#10b981] font-mono">SECURE CHANNEL #{selectedRoomId}</h3>
-              <button 
-                onClick={() => {
-                  fetch(`/api/chat/rooms/${selectedRoomId}/close`, { method: "PATCH" });
-                  setSelectedRoomId(null);
-                }}
-                className="text-xs bg-[#222] px-3 py-1.5 rounded hover:bg-[#333] transition-colors"
-              >
-                Close Channel
-              </button>
-            </div>
-            {/* ChatRoomView 재사용 (adminId 전달) */}
-            <div className="flex-1 relative overflow-hidden">
-              <ChatRoomView roomId={selectedRoomId} customerId={ADMIN_ID} />
-            </div>
-          </>
+          (() => {
+            const selectedRoom = rooms.find(r => r.roomId === selectedRoomId);
+            const isCompleted = selectedRoom?.status === 'COMPLETED';
+            return (
+              <>
+                <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#111] z-10">
+                  <h3 className="font-bold text-[#10b981] font-mono">SECURE CHANNEL #{selectedRoomId}</h3>
+                  {!isCompleted && (
+                    <button 
+                      onClick={() => {
+                        fetch(`/api/chat/rooms/${selectedRoomId}/close`, { 
+                          method: "PATCH",
+                          headers: {
+                            Authorization: `Bearer ${getAccessToken()}`
+                          }
+                        })
+                          .then(res => {
+                            if (!res.ok) throw new Error("채널 닫기 실패");
+                            setSelectedRoomId(null);
+                          })
+                          .catch(err => alert(err.message));
+                      }}
+                      className="px-4 py-2 bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-700 rounded-md transition-colors font-mono tracking-widest text-xs"
+                    >
+                      CLOSE CHANNEL
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 relative overflow-hidden">
+                  <ChatRoomView roomId={selectedRoomId} customerId={ADMIN_ID} isAdmin={true} />
+                </div>
+              </>
+            );
+          })()
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-600 opacity-50">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-4">

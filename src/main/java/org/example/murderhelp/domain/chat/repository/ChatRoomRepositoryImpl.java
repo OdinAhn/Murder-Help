@@ -43,7 +43,7 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepositoryCustom {
     }
     
     private BooleanExpression eqCustomerId(Long customerId) {
-        return customerId != null ? chatRoom.customerId.eq(customerId) : null;
+        return customerId != null ? chatRoom.customer.id.eq(customerId) : null;
     }
     
     private BooleanExpression eqStatus(ChatRoomStatus status) {

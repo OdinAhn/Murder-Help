@@ -33,7 +33,7 @@ export default function ChatModal({ customerId, onClose }: { customerId: number;
             Code Red Support
           </h3>
         </div>
-        <button onClick={onClose} className="text-gray-500 hover:text-white font-bold transition-colors">X</button>
+        <button onClick={onClose} className="text-gray-500 hover:text-white font-bold transition-colors">✕</button>
       </div>
 
       {/* Body: List or Room View */}

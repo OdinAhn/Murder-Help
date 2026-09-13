@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import type { ChatRoomResponse } from "./chat.types";
+import { getAccessToken } from "../../api/client";
 
 export default function ChatRoomList({ customerId, onSelectRoom, preventAutoJoin }: { customerId: number; onSelectRoom: (id: number) => void; preventAutoJoin?: boolean }) {
   const [rooms, setRooms] = useState<ChatRoomResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/chat/rooms?customerId=${customerId}&page=0&size=50`)
-      .then(res => res.json())
+    fetch(`/api/chat/rooms/my?page=0&size=50`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`
+      }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("채팅방 목록 조회 실패");
+        return res.json();
+      })
       .then(json => {
         if (json.data && json.data.content) {
           const list = json.data.content as ChatRoomResponse[];
@@ -21,7 +30,10 @@ export default function ChatRoomList({ customerId, onSelectRoom, preventAutoJoin
           }
         }
       })
-      .catch(err => console.error("채팅방 조회 실패", err))
+      .catch(err => {
+        console.error("채팅방 조회 실패", err);
+        setIsError(true);
+      })
       .finally(() => setLoading(false));
   }, [customerId, onSelectRoom, preventAutoJoin]);
 
@@ -29,15 +41,21 @@ export default function ChatRoomList({ customerId, onSelectRoom, preventAutoJoin
     try {
       const res = await fetch(`/api/chat/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId })
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAccessToken()}`
+        }
       });
       
       const json = await res.json();
       
-      // 백엔드에서 에러를 던진 경우 (진행 중인 상담 있음)
-      if (!res.ok || (json.code && json.code === "CHAT_003")) {
-        alert(json.message || "이미 진행 중인 상담이 존재합니다.");
+      // 백엔드에서 에러를 던진 경우
+      if (!res.ok) {
+        if (json.code === "CHAT_003") {
+          alert("이미 진행 중인 상담이 존재합니다.");
+        } else {
+          alert(json.message || "서버 통신 중 오류가 발생했습니다.");
+        }
         return;
       }
 
@@ -64,9 +82,14 @@ export default function ChatRoomList({ customerId, onSelectRoom, preventAutoJoin
       </button>
       
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <h4 className="text-[#a08070] text-xs mb-3 uppercase tracking-widest font-bold">Past Communications</h4>
+        <h4 className="text-[#a08070] text-xs mb-3 uppercase tracking-widest font-bold">COMMS HISTORY</h4>
         
-        {rooms.length === 0 ? (
+        {isError ? (
+          <div className="text-center mt-20 opacity-80">
+            <svg className="w-12 h-12 mx-auto mb-3 text-[#cc2200]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <p className="text-[#e83010] text-xs font-mono">통신망 연결에 실패했습니다.<br/>잠시 후 다시 시도해주세요.</p>
+          </div>
+        ) : rooms.length === 0 ? (
           <div className="text-center mt-20 opacity-50">
             <svg className="w-12 h-12 mx-auto mb-3 text-[#cc2200]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
             <p className="text-[#f0e0d8] text-xs font-mono">통신 기록이 존재하지 않습니다.</p>

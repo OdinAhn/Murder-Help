@@ -12,6 +12,7 @@ import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializ
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
+
 @Configuration
 public class RedisConfig {
 
@@ -50,15 +51,15 @@ public class RedisConfig {
     @Bean
     @Profile("!test")
     public RedisMessageListenerContainer redisMessageListenerContainer(
-            RedisConnectionFactory connectionFactory, 
+            RedisConnectionFactory connectionFactory,
             ChatRedisSubscriber subscriber) {
-        
+
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
-        
+
         // 채팅방 토픽 패턴(chat-room:*) 구독 등록
         container.addMessageListener(subscriber, new PatternTopic("chat-room:*"));
-        
+
         return container;
     }
 }
