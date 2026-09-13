@@ -1,3 +1,4 @@
+import type { Tier } from "../catalog";
 import { authFetch } from "./client";
 
 type ApiResponse<T> = {
@@ -64,7 +65,37 @@ export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder
 /* 백엔드 OrderListPeriod — 값을 안 보내면 서버가 MONTH_3 으로 조회한다 */
 export type OrderPeriod = "MONTH_1" | "MONTH_3" | "MONTH_6" | "MONTH_12" | "ALL";
 
+/* 백엔드 ReviewResponse — 주문 상품에 리뷰를 아직 안 썼으면 null 로 온다 */
+export type OrderItemReview = {
+  reviewId: number;
+  orderItemId: number;
+  productId: number;
+  rating: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/* orderItemId · productCode · tier · imageUrl 은 아직 백엔드 OrderResponse.Item 에 없다.
+   추가되기 전에도 화면이 깨지지 않도록 없을 수 있는 값으로 둔다. */
+export type OrderItemData = {
+  orderItemId?: number;
+  productCode?: string;
+  tier?: Tier;
+  imageUrl?: string;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+  review?: OrderItemReview | null;
+};
+
+/* orderedAt(주문일시) · canceledAt(취소일) · trackingNumber(송장번호) · paymentMethod(결제 수단)도
+   아직 백엔드 OrderResponse 에 없다 */
 export type OrderData = {
+  orderedAt?: string;
+  canceledAt?: string;
+  trackingNumber?: string;
+  paymentMethod?: string;
   orderNumber: string;
   status: OrderStatus;
   totalAmount: number;
@@ -72,7 +103,7 @@ export type OrderData = {
   receiverPhone: string;
   deliveryAddress: string;
   deliveryRequest: string | null;
-  items: { productName: string; unitPrice: number; quantity: number }[];
+  items: OrderItemData[];
 };
 
 /* 컨트롤러가 Spring Data Page 를 그대로 반환한다(PageSerializationMode.DIRECT).
@@ -82,6 +113,7 @@ type SpringPage<T> = {
   content: T[];
   number: number;
   totalElements: number;
+  totalPages: number;
   last: boolean;
 };
 
@@ -89,6 +121,7 @@ export type OrderPage = {
   items: OrderData[];
   page: number;
   totalElements: number;
+  totalPages: number;
   hasNext: boolean;
 };
 
@@ -118,6 +151,7 @@ export async function fetchMyOrders(
     items: body.data.content,
     page: body.data.number + 1, // 요청과 같은 1부터 시작하는 번호로 맞춘다
     totalElements: body.data.totalElements,
+    totalPages: body.data.totalPages,
     hasNext: !body.data.last,
   };
 }
