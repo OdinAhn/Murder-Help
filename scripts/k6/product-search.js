@@ -27,7 +27,8 @@ export const options = {
                 {duration: __ENV.STEADY_DURATION || '1m', target: Number(__ENV.MAX_VUS || 20)},
                 {duration: __ENV.RAMP_DOWN_DURATION || '15s', target: 0},
             ],
-            gracefulRampDown: '10s',
+            gracefulRampDown: __ENV.GRACEFUL_RAMP_DOWN || '10s',
+            gracefulStop: __ENV.GRACEFUL_STOP || '10s',
         },
     },
     thresholds: {
@@ -41,7 +42,7 @@ function searchUrl() {
     return `${baseUrl}/api/${apiVersion}/products/search`
         + `?keyword=${encodeURIComponent(keyword)}`
         + `&tier=${encodeURIComponent(tier)}`
-        + `&page=0&size=${pageSize}&sort=id,asc`;
+        + `&page=0&size=${pageSize}&sort=POPULAR`;
 }
 
 function requestSearch() {

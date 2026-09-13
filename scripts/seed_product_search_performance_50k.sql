@@ -1,7 +1,7 @@
 -- 상품 검색 v1/v2 성능 비교용 50,000건 더미 데이터.
 --
 -- 실행 방법 (로컬 MySQL에서만 실행):
---   mysql -h localhost -P 3306 -u killer_admin -p killer_mall < scripts/seed_product_search_performance_50k.sql
+--   mysql --default-character-set=utf8mb4 -h localhost -P 3306 -u killer_admin -p killer_mall < scripts/seed_product_search_performance_50k.sql
 --
 -- 이 스크립트는 애플리케이션 기동 시 자동 실행되지 않는다.
 -- 기존 데이터 중 product_code가 PERF-로 시작하는 성능 테스트 상품만 삭제한 뒤
@@ -51,6 +51,7 @@ BEGIN
         INSERT INTO products (
             product_code,
             category_id,
+            category,
             name,
             description,
             image_url,
@@ -61,6 +62,7 @@ BEGIN
         ) VALUES (
             CONCAT('PERF-', LPAD(product_number, 6, '0')),
             @performance_category_id,
+            'Performance Test',
             CONCAT(
                 CASE MOD(product_number, 5)
                     WHEN 0 THEN '권총'
