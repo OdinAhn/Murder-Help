@@ -29,6 +29,10 @@ public class LocalCacheConfig {
                 .expireAfterWrite(Duration.ofMinutes(3))
                 .maximumSize(500)
                 .build());
+        cacheManager.registerCustomCache(CacheNames.CART_ITEMS, Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(1))
+                .maximumSize(1_000)
+                .build());
         return cacheManager;
     }
 }

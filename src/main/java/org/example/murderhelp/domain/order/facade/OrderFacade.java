@@ -7,6 +7,7 @@ import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
 import org.example.murderhelp.domain.order.service.OrderService;
 import org.example.murderhelp.domain.product.entity.Product;
+import org.example.murderhelp.domain.product.service.ProductCacheEvictionService;
 import org.example.murderhelp.domain.product.service.ProductService;
 import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
@@ -24,6 +25,7 @@ public class OrderFacade {
     private final OrderService orderService;
     private final ProductService productService;
     private final CartService cartService;
+    private final ProductCacheEvictionService productCacheEvictionService;
 
     @Transactional
     public CreateOrderResponse createOrder(Long memberId, CreateOrderRequest createOrderRequest) {
@@ -53,6 +55,7 @@ public class OrderFacade {
 
         // 장바구니 비우기 (주문한 것만)
         cartService.deleteItems(memberId, createOrderRequest.cartItemIds());
+        productCacheEvictionService.evictProductCaches();
 
         return createOrderResponse;
     }

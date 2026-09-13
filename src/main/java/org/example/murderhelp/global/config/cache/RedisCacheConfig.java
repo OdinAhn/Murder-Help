@@ -22,6 +22,7 @@ public class RedisCacheConfig {
     private static final Duration PRODUCT_SEARCH_TTL = Duration.ofMinutes(10);
     private static final Duration PRODUCT_DETAIL_TTL = Duration.ofMinutes(5);
     private static final Duration PRODUCT_LIST_TTL = Duration.ofMinutes(3);
+    private static final Duration CART_ITEMS_TTL = Duration.ofMinutes(1);
 
     @Bean
     public CacheManager cacheManager(
@@ -39,6 +40,7 @@ public class RedisCacheConfig {
         RedisCacheConfiguration productSearchConfiguration = defaultConfiguration.entryTtl(PRODUCT_SEARCH_TTL);
         RedisCacheConfiguration productDetailConfiguration = defaultConfiguration.entryTtl(PRODUCT_DETAIL_TTL);
         RedisCacheConfiguration productListConfiguration = defaultConfiguration.entryTtl(PRODUCT_LIST_TTL);
+        RedisCacheConfiguration cartItemsConfiguration = defaultConfiguration.entryTtl(CART_ITEMS_TTL);
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(productSearchConfiguration)
@@ -46,7 +48,8 @@ public class RedisCacheConfig {
                         Map.of(
                                 CacheNames.PRODUCT_SEARCH, productSearchConfiguration,
                                 CacheNames.PRODUCT_DETAIL, productDetailConfiguration,
-                                CacheNames.PRODUCT_LIST, productListConfiguration
+                                CacheNames.PRODUCT_LIST, productListConfiguration,
+                                CacheNames.CART_ITEMS, cartItemsConfiguration
                         )
                 )
                 .build();
