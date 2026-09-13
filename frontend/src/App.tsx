@@ -433,7 +433,7 @@ export default function App() {
          회원 정보 조회만 실패했다면 저장된 세션으로 계속 진행한다. */
       try {
         const member = await getMe();
-        if (!cancelled) applyMember(String(member.id), spentFromGrade(member.grade));
+        if (!cancelled) applyMember(String(member.id), spentFromGrade(member.grade), member.grade.toLowerCase() as Tier);
       } catch (error) {
         console.error(error);
       }
@@ -503,7 +503,7 @@ export default function App() {
   }
 
   /* 로그인과 새로고침 복원 모두 서버 회원 정보로 세션을 만들고, 등급 탭을 내 등급으로 맞춘다 */
-   function handleLogin(id: string, spent: number, grade?: Tier) {
+  function applyMember(id: string, spent: number, grade?: Tier) {
     setSession({ id, spent, grade });
     const tier = grade ?? tierFor(spent, id);
     setActiveCodeTab(tier === "green" ? "red" : tier);
