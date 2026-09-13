@@ -12,6 +12,7 @@ import org.example.murderhelp.domain.payment.entity.Payment;
 import org.example.murderhelp.domain.payment.entity.PaymentStatus;
 import org.example.murderhelp.domain.payment.port.PaymentGateway;
 import org.example.murderhelp.domain.payment.port.PaymentGatewayResponse;
+import org.example.murderhelp.domain.payment.repository.dto.PaymentWithItems;
 import org.example.murderhelp.domain.payment.service.PaymentCommandService;
 import org.example.murderhelp.domain.payment.service.PaymentService;
 import org.example.murderhelp.global.error.BusinessException;
@@ -33,7 +34,8 @@ public class PaymentFacade {
      * 결제 승인
      */
     public PaymentConfirmResponse confirmPayment(Long memberId, PaymentConfirmRequest request) {
-        Payment payment = paymentService.findByOrderIdWithOrder(request.orderId());
+        PaymentWithItems paymentWithItems = paymentService.findByOrderIdWithOrder(request.orderId());
+        Payment payment = paymentWithItems.payment();
 
         Order order = payment.getOrder();
 
@@ -98,7 +100,7 @@ public class PaymentFacade {
         validateMember(memberId, order);
 
         // 실제 결제 취소 + 주문 취소 처리
-        paymentCommandService.cancelPaymentAndOrder(order.getId(), FailReason.USER_CANCELLED);
+        paymentCommandService.cancelPaymentAndOrder(order.getId());
 
         // 변경된 Payment 조회
         Payment updatedPayment = paymentService.findByIdWithOrder(paymentId);
@@ -125,11 +127,10 @@ public class PaymentFacade {
      * 주문 소유자 검증
      */
     private void validateMember(Long memberId, Order order) {
-        // TODO : ORDER에 MEMBER 연동 되면 주석 해제
-        /*if (!order.getMemberId().equals(memberId)) {
+        if (!order.getMember().getId().equals(memberId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE
             );
-        }*/
+        }
     }
 
     /**

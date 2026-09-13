@@ -1,6 +1,7 @@
 package org.example.murderhelp.domain.payment.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.murderhelp.domain.cart.service.CartService;
 import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.entity.OrderItem;
 import org.example.murderhelp.domain.order.entity.OrderStatus;
@@ -8,6 +9,8 @@ import org.example.murderhelp.domain.payment.dto.PaymentConfirmResponse;
 import org.example.murderhelp.domain.payment.entity.FailReason;
 import org.example.murderhelp.domain.payment.entity.Payment;
 import org.example.murderhelp.domain.payment.entity.PaymentStatus;
+import org.example.murderhelp.domain.payment.repository.dto.PaymentWithItems;
+import org.example.murderhelp.domain.product.entity.Product;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,14 +21,16 @@ import java.util.List;
 public class PaymentCommandService {
 
     private final PaymentService paymentService;
-    //private final CartService cartService;
+    private final CartService cartService;
 
     /**
      * 결제 승인 + 주문 완료
      */
     @Transactional
     public PaymentConfirmResponse approvePaymentAndOrder(Long orderId) {
-        Payment payment = paymentService.findByOrderIdWithOrderForUpdate(orderId);
+        PaymentWithItems paymentWithItems = paymentService.findByOrderIdWithOrderForUpdate(orderId);
+        Payment payment = paymentWithItems.payment();
+        List<OrderItem> orderItems =  paymentWithItems.orderItems();
 
         // Confirm API와 Webhook이 동시에 처리된 경우
         // 먼저 완료한 요청이 있다면 나머지는 정상 종료
@@ -42,7 +47,7 @@ public class PaymentCommandService {
         order.transitTo(OrderStatus.DELIVERED);
 
         // 장바구니 상품 삭제
-        deleteCartItems(order);
+        deleteCartItems(orderItems, order.getMember().getId());
 
         return PaymentConfirmResponse.from(payment);
     }
@@ -53,7 +58,9 @@ public class PaymentCommandService {
      */
     @Transactional
     public void failPaymentAndOrder(Long orderId, FailReason reason) {
-        Payment payment = paymentService.findByOrderIdWithOrder(orderId);
+        PaymentWithItems paymentWithItems = paymentService.findByOrderIdWithOrder(orderId);
+        Payment payment = paymentWithItems.payment();
+        List<OrderItem> orderItems =  paymentWithItems.orderItems();
 
         Order order = payment.getOrder();
 
@@ -64,15 +71,17 @@ public class PaymentCommandService {
         order.transitTo(OrderStatus.CANCELED);
 
         // 재고 복구
-        restoreStock(order);
+        restoreStock(orderItems);
     }
 
     /**
      * 사용자 결제 취소
      */
     @Transactional
-    public void cancelPaymentAndOrder(Long orderId, FailReason reason) {
-        Payment payment = paymentService.findByOrderIdWithOrder(orderId);
+    public void cancelPaymentAndOrder(Long orderId) {
+        PaymentWithItems paymentWithItems = paymentService.findByOrderIdWithOrder(orderId);
+        Payment payment = paymentWithItems.payment();
+        List<OrderItem> orderItems =  paymentWithItems.orderItems();
 
         Order order = payment.getOrder();
 
@@ -83,28 +92,25 @@ public class PaymentCommandService {
         order.transitTo(OrderStatus.CANCELED);
 
         // 재고 복구
-        restoreStock(order);
+        restoreStock(orderItems);
     }
 
     /**
      * 주문 상품 재고 복구
      */
-    private void restoreStock(Order order) {
-        //order.getOrderItems().forEach(item -> item.getProduct().restoreStock(item.getQuantity()));
+    private void restoreStock(List<OrderItem> orderItems) {
+        orderItems.forEach(item -> item.getProduct().restoreStock(item.getQuantity()));
     }
 
     /**
      * 결제 완료 후 장바구니 상품 삭제
      */
-    private void deleteCartItems(Order order) {
-/*
-        List<Long> productIds = order.getOrderItems()
-                .stream()
+    private void deleteCartItems(List<OrderItem> orderItems, Long memberId) {
+        List<Long> productIds = orderItems.stream()
                 .map(OrderItem::getProduct)
-                .map(product -> product.getId())
+                .map(Product::getId)
                 .toList();
 
-        cartService.deleteCartItemsByProductIds(order.getMemberId(), productIds);
- */
+        cartService.deleteItems(memberId, productIds);
     }
 }

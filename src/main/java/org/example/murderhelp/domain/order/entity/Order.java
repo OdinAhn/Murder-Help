@@ -117,7 +117,7 @@ public class Order extends BaseTimeEntity {
         return "ORD-" + timestamp + "-" + randomUUID;
     }
   
-     // 상태 변경의 통로(세터 생성 X)
+    // 상태 변경의 통로(세터 생성 X)
     // 결제 확정이 중복되어도 여기서 막는다.
     // 재고 중복 복구도 막는다.
     public void transitTo(OrderStatus target) {

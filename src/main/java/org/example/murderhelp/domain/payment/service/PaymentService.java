@@ -32,12 +32,12 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
-    public Payment findByOrderIdWithOrder(Long orderId) {
+    public PaymentWithItems findByOrderIdWithOrder(Long orderId) {
         return paymentRepository.findByOrderIdWithOrder(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
     }
 
-    public Payment findByOrderId(Long orderId) {
+    public PaymentWithItems findByOrderId(Long orderId) {
         return findByOrderIdWithOrder(orderId);
     }
 
@@ -62,7 +62,7 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
     }
 
-    public Payment findByPortonePaymentId(String portonePaymentId) {
+    public PaymentWithItems findByPortonePaymentId(String portonePaymentId) {
         return paymentRepository.findByPortonePaymentId(portonePaymentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
     }
@@ -92,7 +92,7 @@ public class PaymentService {
                 .collect(Collectors.toMap(p -> p.getOrder().getId(), p -> p));
     }
 
-    public Payment findByOrderIdWithOrderForUpdate(Long orderId) {
+    public PaymentWithItems findByOrderIdWithOrderForUpdate(Long orderId) {
         return paymentRepository.findByOrderIdWithOrderForUpdate(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
     }
