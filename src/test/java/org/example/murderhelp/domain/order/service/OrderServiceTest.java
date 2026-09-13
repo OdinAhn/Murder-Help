@@ -16,6 +16,7 @@ import org.example.murderhelp.domain.order.repository.OrderRepository;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.global.error.BusinessException;
 import org.example.murderhelp.global.error.ErrorCode;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -73,7 +74,8 @@ class OrderServiceTest {
     // ─── 주문 목록 조회 ───
 
     @Test
-    void 주문_목록이_없으면_빈_페이지를_반환한다() {
+    @DisplayName("주문 목록이 없으면 빈 페이지를 반환한다")
+    void shouldReturnEmptyPageWhenNoOrdersExist() {
         // given
         OrderListRequest request = new OrderListRequest(OrderListPeriod.MONTH_3, null);
         when(orderRepository.findAllListPage(eq(1L), any(LocalDateTime.class), isNull(), eq(pageable)))
@@ -88,7 +90,8 @@ class OrderServiceTest {
     }
 
     @Test
-    void 조회_기간이_ALL이면_시작일_없이_조회한다() {
+    @DisplayName("조회 기간이 ALL이면 시작일 없이 조회한다")
+    void shouldQueryWithoutStartDateWhenPeriodIsAll() {
         // given
         OrderListRequest request = new OrderListRequest(OrderListPeriod.ALL, OrderStatus.PAID);
         when(orderRepository.findAllListPage(anyLong(), any(), any(), any()))
@@ -102,7 +105,8 @@ class OrderServiceTest {
     }
 
     @Test
-    void 주문_목록을_주문별_주문상품과_함께_반환한다() {
+    @DisplayName("주문 목록을 주문별 주문상품과 함께 반환한다")
+    void shouldReturnOrdersWithTheirOrderItems() {
         // given
         Member member = createMember(1L);
         Order order1 = createOrderEntity(10L, member);
@@ -136,7 +140,8 @@ class OrderServiceTest {
     // ─── 주문 상세 조회 ───
 
     @Test
-    void 본인_주문이면_주문_상세를_반환한다() {
+    @DisplayName("본인 주문이면 주문 상세를 반환한다")
+    void shouldReturnOrderDetailsForOwner() {
         // given
         Order order = createOrderEntity(10L, createMember(1L));
         OrderItem orderItem = new OrderItem(order, createProduct("권총", 100_000L), 2);
@@ -155,7 +160,8 @@ class OrderServiceTest {
     }
 
     @Test
-    void 주문이_없으면_예외가_발생한다() {
+    @DisplayName("주문이 없으면 예외가 발생한다")
+    void shouldThrowWhenOrderDoesNotExist() {
         // given
         when(orderRepository.findById(10L)).thenReturn(Optional.empty());
 
@@ -167,7 +173,8 @@ class OrderServiceTest {
     }
 
     @Test
-    void 다른_회원의_주문이면_주문이_없다는_예외가_발생한다() {
+    @DisplayName("다른 회원의 주문이면 주문이 없다는 예외가 발생한다")
+    void shouldThrowOrderNotFoundForAnotherMembersOrder() {
         // given
         Order order = createOrderEntity(10L, createMember(2L));
         when(orderRepository.findById(10L)).thenReturn(Optional.of(order));
@@ -183,7 +190,8 @@ class OrderServiceTest {
     // ─── 주문 생성 ───
 
     @Test
-    void 장바구니_상품으로_주문과_주문상품을_저장한다() {
+    @DisplayName("장바구니 상품으로 주문과 주문상품을 저장한다")
+    void shouldSaveOrderAndOrderItemsFromCartItems() {
         // given
         Member member = createMember(1L);
         Product pistol = createProduct("권총", 100_000L);
