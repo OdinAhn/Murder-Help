@@ -1,4 +1,4 @@
-import {ReactNode, useEffect, useState} from "react";
+import {ReactNode, useEffect, useRef, useState} from "react";
 import {
   addCartItem,
   deleteCartItem,
@@ -208,6 +208,7 @@ export default function App() {
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const recordedSearchKeyword = useRef<string | null>(null);
   const [popularSearches, setPopularSearches] = useState<PopularSearch[]>([]);
   const [detailProduct, setDetailProduct] = useState<ProductDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -228,17 +229,23 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  /* 상품 결과는 빠르게 갱신하되, 인기 검색어는 입력이 끝났다고 볼 수 있는 시점에만 기록한다. */
-  useEffect(() => {
+  function handleSearchInputChange(value: string) {
+    setSearchInput(value);
+    if (value.trim() !== recordedSearchKeyword.current) {
+      recordedSearchKeyword.current = null;
+    }
+  }
+
+  /* 입력 중에는 기록하지 않고, Enter 또는 검색창 이탈로 검색 의도가 확정됐을 때만 기록한다. */
+  function recordFinalSearch() {
     const keyword = searchInput.trim();
-    if (!session || !authReady || !keyword) return;
+    if (!session || !authReady || !keyword || recordedSearchKeyword.current === keyword) return;
 
-    const timer = window.setTimeout(() => {
-      recordPopularSearch(keyword).catch(() => undefined);
-    }, 700);
-
-    return () => window.clearTimeout(timer);
-  }, [session, authReady, searchInput]);
+    recordedSearchKeyword.current = keyword;
+    recordPopularSearch(keyword).catch(() => {
+      recordedSearchKeyword.current = null;
+    });
+  }
 
   useEffect(() => {
     if (!searchFocused || searchInput.trim()) return;
@@ -790,9 +797,15 @@ export default function App() {
                 </svg>
                 <input
                   value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
+                  onChange={(e) => handleSearchInputChange(e.target.value)}
                   onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
+                  onBlur={() => {
+                    setSearchFocused(false);
+                    recordFinalSearch();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") recordFinalSearch();
+                  }}
                   placeholder="검색..."
                   className="bg-transparent outline-none w-20 text-xs"
                   style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}
@@ -913,9 +926,11 @@ export default function App() {
               </svg>
               <input
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
+                onBlur={recordFinalSearch}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
+                  recordFinalSearch();
                   setMenuOpen(false);
                   navigate({ name: "list" });
                 }}
