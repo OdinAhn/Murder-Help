@@ -2,12 +2,15 @@ package org.example.murderhelp.domain.search.controller;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.search.dto.PopularSearchResponse;
 import org.example.murderhelp.domain.search.service.PopularSearchService;
 import org.example.murderhelp.global.response.ApiResponse;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,5 +28,14 @@ public class SearchController {
             @RequestParam(defaultValue = "10") @Min(1) @Max(10) int limit
     ) {
         return ApiResponse.ok(popularSearchService.getPopularSearches(limit));
+    }
+
+    @PostMapping("/api/searches/popular")
+    public ApiResponse<Void> recordPopularSearch(
+            Authentication authentication,
+            @RequestParam @NotBlank String keyword
+    ) {
+        popularSearchService.recordSearch(authentication.getName(), keyword);
+        return ApiResponse.ok();
     }
 }

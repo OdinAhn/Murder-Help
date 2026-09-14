@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -42,7 +43,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/signup", "/api/auth/login", "/api/auth/reissue").permitAll()
-                        .requestMatchers("/api/searches/popular").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/searches/popular").permitAll()
                         .requestMatchers("/ws/**").permitAll() // 웹소켓 연결 자체는 열어두고 StompAuthInterceptor가 검증
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/**").authenticated()

@@ -134,6 +134,15 @@ export async function fetchPopularSearches(limit = 10): Promise<PopularSearch[]>
   return body.data;
 }
 
+/** POST /api/searches/popular — 입력이 끝난 검색어를 인기 검색어에 기록 */
+export async function recordPopularSearch(keyword: string): Promise<void> {
+  const qs = new URLSearchParams({ keyword });
+  const response = await authFetch(`/api/searches/popular?${qs.toString()}`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(`인기 검색어 기록에 실패했습니다 (${response.status})`);
+}
+
 /* ─── 상품 상세 ───────────────────────────────────────────── */
 type ProductSpecApiResponse = {
   name: string;
