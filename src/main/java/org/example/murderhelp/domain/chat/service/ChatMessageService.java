@@ -1,5 +1,6 @@
 package org.example.murderhelp.domain.chat.service;
 
+import org.springframework.data.redis.core.StringRedisTemplate;
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.chat.bot.BotScenario;
 import org.example.murderhelp.domain.chat.dto.ChatMessageResponse;
@@ -34,6 +35,8 @@ public class ChatMessageService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final BotCommandDispatcher botCommandDispatcher;
+    private final StringRedisTemplate redisTemplate;
+
 
     @Transactional
     public void sendBotWelcomeMessage(Long roomId) {
@@ -54,8 +57,11 @@ public class ChatMessageService {
 
         // 종료 시스템 메시지 저장/발행
         chatMessageRepository.save(closeMsg);
+        updateLastMessageInRedis(room.getId(), closeMsg.getContent());
         publishMessageEvent(room.getId(), closeMsg);
+        publishRoomUpdate(room);
     }
+
 
     @Transactional
     public void sendMessage(ChatMessageSendRequest request) {
@@ -70,7 +76,6 @@ public class ChatMessageService {
         // 관리자 배정
         if (!isCustomer && room.getStatus() == ChatRoomStatus.WAITING && room.getAdmin() == null) {
             room.assignAdmin(sender);
-            publishRoomUpdate(room);
         }
 
         // 일반 사용자(고객) 메시지
@@ -82,7 +87,9 @@ public class ChatMessageService {
                 .build();
 
         chatMessageRepository.save(message);
+        updateLastMessageInRedis(room.getId(), message.getContent());
         publishMessageEvent(room.getId(), message);
+        publishRoomUpdate(room);
 
         // 챗봇 메시지
         if (room.getStatus().isBotActive() && isCustomer) {
@@ -101,7 +108,9 @@ public class ChatMessageService {
                 .messageType(ChatMessageType.SYSTEM)
                 .build();
         chatMessageRepository.save(sysMsg);
+        updateLastMessageInRedis(room.getId(), sysMsg.getContent());
         publishMessageEvent(room.getId(), sysMsg);
+        publishRoomUpdate(room);
     }
 
     @Transactional
@@ -116,10 +125,16 @@ public class ChatMessageService {
                     .build();
 
             chatMessageRepository.save(botMsg);
+            updateLastMessageInRedis(room.getId(), "[챗봇 메시지]");
             publishMessageEvent(room.getId(), botMsg);
+            publishRoomUpdate(room);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private void updateLastMessageInRedis(Long roomId, String content) {
+        redisTemplate.opsForHash().put("chat_last_messages", roomId.toString(), content);
     }
 
     private void publishMessageEvent(Long roomId, ChatMessage message) {

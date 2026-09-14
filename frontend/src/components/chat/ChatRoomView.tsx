@@ -34,7 +34,7 @@ export default function ChatRoomView({ roomId, customerId, isAdmin = false }: { 
       <div 
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 custom-scrollbar"
       >
         {!isAdmin && !isCompleted && (
           <div className="flex flex-col items-center justify-center my-6 pb-6 border-b border-[rgba(204,34,0,0.2)]">

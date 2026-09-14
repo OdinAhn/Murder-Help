@@ -5,6 +5,7 @@ export interface ChatRoomResponse {
   title: string;
   status: ChatRoomStatus;
   createdAt: string;
+  lastMessage?: string;
 }
 
 export type ChatMessageType = "TEXT" | "SYSTEM" | "BUTTON";
@@ -28,6 +29,7 @@ export interface PageResponse<T> {
   last: boolean;
   number: number;
   numberOfElements: number;
+  totalElements: number;
 }
 
 export interface BotOptionDto {

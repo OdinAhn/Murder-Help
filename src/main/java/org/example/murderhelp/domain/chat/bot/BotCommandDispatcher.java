@@ -30,7 +30,6 @@ public class BotCommandDispatcher {
 
     private void connectAgent(ChatRoom room, ChatMessageService svc) {
         room.changeToWaiting();
-        svc.publishRoomUpdate(room);
         svc.sendSystemMessage(room, "상담사 연결을 대기 중입니다. 잠시만 기다려주세요.");
     }
 }

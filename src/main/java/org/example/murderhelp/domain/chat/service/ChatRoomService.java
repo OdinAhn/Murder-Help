@@ -1,5 +1,6 @@
 package org.example.murderhelp.domain.chat.service;
 
+import org.springframework.data.redis.core.StringRedisTemplate;
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.chat.dto.ChatRoomResponse;
 import org.example.murderhelp.domain.chat.entity.ChatRoom;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +28,7 @@ public class ChatRoomService {
     private final MemberService memberService;
     private final ChatRoomRepository chatRoomRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final StringRedisTemplate redisTemplate;
 
     @Transactional
     public ChatRoomResponse createRoom(Long memberId) {
@@ -51,7 +54,7 @@ public class ChatRoomService {
         chatRoomRepository.save(room);
         eventPublisher.publishEvent(ChatRoomUpdatedEvent.from(room));
 
-        return ChatRoomResponse.from(room);
+        return ChatRoomResponse.from(room, null);
     }
 
     @Transactional
@@ -62,10 +65,28 @@ public class ChatRoomService {
         eventPublisher.publishEvent(ChatRoomUpdatedEvent.from(room));
     }
 
-    public Page<ChatRoomResponse> getRooms(Long customerId, ChatRoomStatus status, Pageable pageable) {
-        return chatRoomRepository.findRoomsByCondition(customerId, status, pageable)
-                .map(ChatRoomResponse::from);
+ 
+    public Page<ChatRoomResponse> getRooms(Long customerId, ChatRoomStatus status, String keyword, Pageable pageable) {
+        Page<ChatRoom> roomPage = chatRoomRepository.findRoomsByCondition(customerId, status, keyword, pageable);
+        List<String> roomIds = roomPage.stream()
+                                       .map(room -> room.getId().toString())
+                                       .collect(Collectors.toList());
+
+        List<Object> lastMessages = List.of();
+        if (!roomIds.isEmpty()) {
+            lastMessages = redisTemplate.opsForHash().multiGet("chat_last_messages", (List<Object>)(List<?>) roomIds);
+        }
+
+        List<Object> finalLastMessages = lastMessages;
+        return roomPage.map(room -> {
+            int index = roomIds.indexOf(room.getId().toString());
+            String lastMsg = (finalLastMessages != null && index >= 0 && index < finalLastMessages.size()) 
+                    ? (String) finalLastMessages.get(index) 
+                    : null;
+            return ChatRoomResponse.from(room, lastMsg);
+        });
     }
+
 
     public ChatRoomResponse getRoom(Long roomId) {
         return ChatRoomResponse.from(getRoomEntity(roomId));

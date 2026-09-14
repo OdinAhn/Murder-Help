@@ -6,5 +6,5 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface ChatRoomRepositoryCustom {
-    Page<ChatRoom> findRoomsByCondition(Long customerId, ChatRoomStatus status, Pageable pageable);
+    Page<ChatRoom> findRoomsByCondition(Long customerId, ChatRoomStatus status, String keyword, Pageable pageable);
 }

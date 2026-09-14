@@ -22,12 +22,13 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Page<ChatRoom> findRoomsByCondition(Long customerId, ChatRoomStatus status, Pageable pageable) {
+    public Page<ChatRoom> findRoomsByCondition(Long customerId, ChatRoomStatus status, String keyword, Pageable pageable) {
         List<ChatRoom> content = queryFactory
                 .selectFrom(chatRoom)
                 .where(
                         eqCustomerId(customerId),
-                        eqStatus(status)
+                        eqStatus(status),
+                        containsKeyword(keyword)
                 )
                 .orderBy(chatRoom.updatedAt.desc())
                 .offset(pageable.getOffset())
@@ -37,7 +38,11 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepositoryCustom {
         JPAQuery<Long> countQuery = queryFactory
                 .select(chatRoom.count())
                 .from(chatRoom)
-                .where(eqCustomerId(customerId), eqStatus(status));
+                .where(
+                        eqCustomerId(customerId),
+                        eqStatus(status),
+                        containsKeyword(keyword)
+                );
 
         return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
     }
@@ -48,5 +53,14 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepositoryCustom {
     
     private BooleanExpression eqStatus(ChatRoomStatus status) {
         return status != null ? chatRoom.status.eq(status) : null;
+    }
+
+    private BooleanExpression containsKeyword(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return null;
+        }
+        return chatRoom.title.containsIgnoreCase(keyword)
+                .or(chatRoom.customer.name.containsIgnoreCase(keyword))
+                .or(chatRoom.customer.email.containsIgnoreCase(keyword));
     }
 }

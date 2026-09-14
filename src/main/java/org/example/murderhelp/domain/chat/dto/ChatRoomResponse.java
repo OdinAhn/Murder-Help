@@ -9,14 +9,26 @@ public record ChatRoomResponse(
     Long roomId,
     String title,
     ChatRoomStatus status,
-    LocalDateTime createdAt
+    LocalDateTime createdAt,
+    String lastMessage
 ) {
     public static ChatRoomResponse from(ChatRoom chatRoom) {
         return new ChatRoomResponse(
             chatRoom.getId(),
             chatRoom.getTitle(),
             chatRoom.getStatus(),
-            chatRoom.getCreatedAt()
+            chatRoom.getCreatedAt(),
+            null
+        );
+    }
+
+    public static ChatRoomResponse from(ChatRoom chatRoom, String lastMessage) {
+        return new ChatRoomResponse(
+            chatRoom.getId(),
+            chatRoom.getTitle(),
+            chatRoom.getStatus(),
+            chatRoom.getCreatedAt(),
+            lastMessage
         );
     }
 }

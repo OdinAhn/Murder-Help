@@ -61,7 +61,7 @@ export function ChatMessageBubble({ message: m, customerId, isAdmin, isCompleted
             <path d="M12 16v-4"></path>
             <path d="M12 8h.01"></path>
           </svg>
-          <span className="text-xs text-zinc-300 tracking-wide whitespace-nowrap pt-[1px]">{m.content}</span>
+          <span className="text-xs text-zinc-300 tracking-wide text-center break-keep pt-[1px]">{m.content}</span>
         </div>
       </div>
     );
@@ -135,7 +135,7 @@ export function ChatMessageBubble({ message: m, customerId, isAdmin, isCompleted
         
         {/* 말풍선 본체 */}
         <div 
-          className={`max-w-[85%] break-keep px-3.5 py-2 text-[13px] leading-relaxed tracking-wide shadow-sm ${
+          className={`max-w-[85%] break-words px-3.5 py-2 text-[13px] leading-relaxed tracking-wide shadow-sm ${
             isMe ? "rounded-2xl rounded-tr-sm" : "rounded-2xl rounded-tl-sm"
           }`}
           style={{ 

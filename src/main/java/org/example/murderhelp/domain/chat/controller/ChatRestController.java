@@ -34,10 +34,11 @@ public class ChatRestController {
     public ApiResponse<Page<ChatRoomResponse>> getMyRooms(
             @AuthenticationPrincipal Long memberId,
             @RequestParam(required = false) ChatRoomStatus status,
+            @RequestParam(required = false) String keyword,
             Pageable pageable) {
         
         // 내 방만 조회
-        return ApiResponse.ok(chatRoomService.getRooms(memberId, status, pageable));
+        return ApiResponse.ok(chatRoomService.getRooms(memberId, status, keyword, pageable));
     }
 
     // 2-2단계: 관리자용 전체 채팅방 목록 조회 (검색 조건 포함)
@@ -46,10 +47,11 @@ public class ChatRestController {
     public ApiResponse<Page<ChatRoomResponse>> getAllRooms(
             @RequestParam(required = false) Long customerId,
             @RequestParam(required = false) ChatRoomStatus status,
+            @RequestParam(required = false) String keyword,
             Pageable pageable) {
         
         // 관리자는 파라미터가 없으면 전체 조회, 있으면 특정 조건 검색
-        return ApiResponse.ok(chatRoomService.getRooms(customerId, status, pageable));
+        return ApiResponse.ok(chatRoomService.getRooms(customerId, status, keyword, pageable));
     }
 
     // 특정 채팅방 단건 조회

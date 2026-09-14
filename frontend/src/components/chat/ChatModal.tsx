@@ -30,7 +30,7 @@ export default function ChatModal({ customerId, onClose }: { customerId: number;
             </button>
           )}
           <h3 className="text-white font-bold tracking-widest text-sm uppercase" style={{ fontFamily: "Share Tech Mono, monospace" }}>
-            Code Red Support
+            1:1 SUPPORT
           </h3>
         </div>
         <button onClick={onClose} className="text-gray-500 hover:text-white font-bold transition-colors">✕</button>
