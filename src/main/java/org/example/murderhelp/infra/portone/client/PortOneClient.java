@@ -43,7 +43,7 @@ public class PortOneClient implements PaymentGateway {
     }
 
     @Override
-    public void cancelPayment(String paymentId, String reason, Integer amount) {
+    public void cancelPayment(String paymentId, String reason, Long amount) {
         String idempotencyKey = UUID.randomUUID().toString();
         log.info("PortOne 결제 취소 요청: paymentId={}, reason={}, idempotencyKey={}", paymentId, reason, idempotencyKey);
 

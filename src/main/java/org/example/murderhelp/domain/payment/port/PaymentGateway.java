@@ -6,5 +6,5 @@ public interface PaymentGateway {
     PaymentGatewayResponse getPayment(String paymentId);
 
     // 결제 취소 (amount가 null이면 전액 취소, 값이 있으면 부분 취소)
-    void cancelPayment(String paymentId, String reason, Integer amount);
+    void cancelPayment(String paymentId, String reason, Long amount);
 }
