@@ -29,6 +29,7 @@ import { Spinner } from "./components/common/Spinner";
 import { CodeTab } from "./components/member/CodeTab";
 import { MyPage } from "./components/member/MyPage";
 import { TierBadge } from "./components/member/TierBadge";
+import { TierProgress } from "./components/member/TierProgress";
 import { CheckoutView } from "./components/order/CheckoutView";
 import { OrderDone } from "./components/order/OrderDone";
 import { ProductCard } from "./components/product/ProductCard";
@@ -967,6 +968,9 @@ export default function App() {
               <span className="text-xs" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
                 {TIERS[userTier].desc}
               </span>
+              <div className="flex-1" style={{ minWidth: 220, maxWidth: 420 }}>
+                <TierProgress spent={session.spent} />
+              </div>
             </div>
           )}
 
