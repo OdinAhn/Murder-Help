@@ -56,4 +56,9 @@ public class Member extends BaseTimeEntity {
     public void changeGrade(Grade grade) {
         this.grade = grade;
     }
+
+    public void updateProfile(String name, String phone) {
+        this.name = name;
+        this.phone = phone;
+    }
 }
