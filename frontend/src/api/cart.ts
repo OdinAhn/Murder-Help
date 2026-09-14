@@ -91,3 +91,17 @@ export async function deleteCartItem(cartItemId: number): Promise<void> {
     throw new Error(body?.message ?? `장바구니 상품을 삭제하지 못했습니다 (${response.status})`);
   }
 }
+
+/** DELETE /api/cart/items — 선택한 장바구니 상품 일괄 삭제 */
+export async function deleteCartItems(cartItemIds: number[]): Promise<void> {
+  const response = await authFetch("/api/cart/items", {
+    method: "DELETE",
+    headers: jsonHeaders(true),
+    body: JSON.stringify({ cartItemIds }),
+  });
+
+  const body = (await response.json().catch(() => null)) as ApiResponse<void> | null;
+  if (!response.ok || !body || body.code !== "SUCCESS") {
+    throw new Error(body?.message ?? `선택한 장바구니 상품을 삭제하지 못했습니다 (${response.status})`);
+  }
+}

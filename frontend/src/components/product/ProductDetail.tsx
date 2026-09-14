@@ -107,9 +107,11 @@ export function ProductDetail({
             <span className="text-3xl font-bold" style={{ color: t.brightColor, fontFamily: "Share Tech Mono" }}>
               {krw(p.price)}
             </span>
-            <span className="text-xs" style={{ color: soldOut ? C.redBright : C.textMuted, fontFamily: "Share Tech Mono" }}>
-              {soldOut ? "SOLD OUT · 품절" : `재고 ${p.stockQuantity}개`}
-            </span>
+            {soldOut && (
+              <span className="text-xs" style={{ color: C.redBright, fontFamily: "Share Tech Mono" }}>
+                SOLD OUT · 품절
+              </span>
+            )}
           </div>
 
           <p className="text-sm leading-relaxed mb-6" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif", fontWeight: 300 }}>

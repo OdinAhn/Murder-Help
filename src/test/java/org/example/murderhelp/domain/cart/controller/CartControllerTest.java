@@ -361,6 +361,88 @@ class CartControllerTest {
     }
 
     @Test
+    void 선택한_장바구니_상품들만_한번에_삭제한다() throws Exception {
+        insertProduct(102L, "P002", 11L, "Second Yellow Pistol", 10, "yellow", "ON_SALE");
+        insertProduct(103L, "P003", 11L, "Third Yellow Pistol", 10, "yellow", "ON_SALE");
+        addItem(memberId, 101L, 1);
+        addItem(memberId, 102L, 1);
+        addItem(memberId, 103L, 1);
+
+        Long firstCartItemId = findCartItemId(memberId, 101L);
+        Long secondCartItemId = findCartItemId(memberId, 102L);
+        Long remainingCartItemId = findCartItemId(memberId, 103L);
+
+        mockMvc.perform(
+                        delete("/api/cart/items")
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"cartItemIds": [%d, %d]}
+                                        """.formatted(firstCartItemId, secondCartItemId))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
+
+        Integer deletedCount = jdbcTemplate.queryForObject(
+                "select count(*) from cart_items where id in (?, ?)",
+                Integer.class,
+                firstCartItemId,
+                secondCartItemId
+        );
+        Integer remainingCount = jdbcTemplate.queryForObject(
+                "select count(*) from cart_items where id = ?",
+                Integer.class,
+                remainingCartItemId
+        );
+        assertThat(deletedCount).isZero();
+        assertThat(remainingCount).isEqualTo(1);
+    }
+
+    @Test
+    void 다른_회원의_상품이_섞인_일괄_삭제는_전체를_거부한다() throws Exception {
+        Long otherMemberId = saveMember("other-bulk-cart-member@example.com");
+        addItem(memberId, 101L, 1);
+        addItem(otherMemberId, 101L, 1);
+
+        Long ownCartItemId = findCartItemId(memberId, 101L);
+        Long otherCartItemId = findCartItemId(otherMemberId, 101L);
+
+        mockMvc.perform(
+                        delete("/api/cart/items")
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"cartItemIds": [%d, %d]}
+                                        """.formatted(ownCartItemId, otherCartItemId))
+                )
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_001"));
+
+        Integer remainingCount = jdbcTemplate.queryForObject(
+                "select count(*) from cart_items where id in (?, ?)",
+                Integer.class,
+                ownCartItemId,
+                otherCartItemId
+        );
+        assertThat(remainingCount).isEqualTo(2);
+    }
+
+    @Test
+    void 선택하지_않으면_장바구니_상품을_일괄_삭제할_수_없다() throws Exception {
+        mockMvc.perform(
+                        delete("/api/cart/items")
+                                .with(authenticatedMember(memberId))
+                                .contentType("application/json")
+                                .content("""
+                                        {"cartItemIds": []}
+                                        """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_001"))
+                .andExpect(jsonPath("$.message").value("삭제할 장바구니 상품을 하나 이상 선택해야 합니다."));
+    }
+
+    @Test
     void 인증하지_않은_사용자는_장바구니_목록_수량변경_삭제를_할_수_없다() throws Exception {
         mockMvc.perform(get("/api/cart/items"))
                 .andExpect(status().isUnauthorized());
@@ -375,6 +457,15 @@ class CartControllerTest {
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(delete("/api/cart/items/1"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(
+                        delete("/api/cart/items")
+                                .contentType("application/json")
+                                .content("""
+                                        {"cartItemIds": [1, 2]}
+                                        """)
+                )
                 .andExpect(status().isUnauthorized());
     }
 

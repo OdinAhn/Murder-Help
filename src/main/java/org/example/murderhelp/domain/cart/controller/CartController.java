@@ -6,6 +6,7 @@ import org.example.murderhelp.domain.cart.dto.CartItemAddRequest;
 import org.example.murderhelp.domain.cart.dto.CartItemDetailResponse;
 import org.example.murderhelp.domain.cart.dto.CartItemUpdateRequest;
 import org.example.murderhelp.domain.cart.dto.CartItemResponse;
+import org.example.murderhelp.domain.cart.dto.CartItemsDeleteRequest;
 import org.example.murderhelp.domain.cart.service.CartService;
 import org.example.murderhelp.global.response.ApiResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -57,6 +58,15 @@ public class CartController {
             @PathVariable Long cartItemId
     ) {
         cartService.deleteItem(memberId, cartItemId);
+        return ApiResponse.ok();
+    }
+
+    @DeleteMapping
+    public ApiResponse<Void> deleteItems(
+            @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody CartItemsDeleteRequest request
+    ) {
+        cartService.deleteItems(memberId, request.cartItemIds());
         return ApiResponse.ok();
     }
 }

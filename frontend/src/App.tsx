@@ -2,6 +2,7 @@ import {ReactNode, useEffect, useState} from "react";
 import {
   addCartItem,
   deleteCartItem,
+  deleteCartItems,
   fetchCartItems,
   updateCartItemQuantity,
   type CartItemDetailData,
@@ -28,7 +29,6 @@ import { Spinner } from "./components/common/Spinner";
 import { CodeTab } from "./components/member/CodeTab";
 import { MyPage } from "./components/member/MyPage";
 import { TierBadge } from "./components/member/TierBadge";
-import { TierProgress } from "./components/member/TierProgress";
 import { CheckoutView } from "./components/order/CheckoutView";
 import { OrderDone } from "./components/order/OrderDone";
 import { ProductCard } from "./components/product/ProductCard";
@@ -166,6 +166,7 @@ export default function App() {
   const [cartError, setCartError] = useState<string | null>(null);
   const [cartReloadKey, setCartReloadKey] = useState(0);
   const [cartPendingIds, setCartPendingIds] = useState<Set<string>>(() => new Set());
+  const [selectedCartIds, setSelectedCartIds] = useState<Set<string>>(() => new Set());
   const [view, setView] = useState<View>({ name: "list" });
   const [showLogin, setShowLogin] = useState(false);
   const [activeCodeTab, setActiveCodeTab] = useState<Tier>(() => {
@@ -363,6 +364,7 @@ export default function App() {
     if (!session) {
       setCart([]);
       setCartItemIds({});
+      setSelectedCartIds(new Set());
       setCartLoading(false);
       setCartError(null);
       return;
@@ -392,11 +394,13 @@ export default function App() {
         setCartItemIds(
           Object.fromEntries(items.map((item) => [item.productCode, item.id]))
         );
+        setSelectedCartIds(new Set(items.map((item) => item.productCode)));
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         setCart([]);
         setCartItemIds({});
+        setSelectedCartIds(new Set());
         setCartError(error instanceof Error ? error.message : "장바구니를 불러오지 못했습니다.");
       })
       .finally(() => {
@@ -516,6 +520,7 @@ export default function App() {
     /* 서버 장바구니는 session 변경을 감지한 조회 effect에서 불러온다. */
     setCart([]);
     setCartItemIds({});
+    setSelectedCartIds(new Set());
   }
 
   async function handleLogout() {
@@ -527,6 +532,8 @@ export default function App() {
       setSession(null);
       setActiveCodeTab("red");
       setCart([]);
+      setCartItemIds({});
+      setSelectedCartIds(new Set());
       navigate({ name: "list" });
     }
   }
@@ -547,10 +554,12 @@ export default function App() {
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
 
-  const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
+  const cartCount = cart.length;
 
-  /* 주문 생성 API는 상품이 아니라 장바구니 항목 ID로 주문한다 */
-  const cartLineIds = cartLines
+  const selectedCartLines = cartLines.filter(({ p }) => selectedCartIds.has(p.id));
+
+  /* 선택 상품 주문 API는 상품 코드가 아니라 실제 장바구니 항목 ID로 요청한다. */
+  const selectedCartLineIds = selectedCartLines
     .map(({ p }) => cartItemIds[p.id])
     .filter((id): id is number => id !== undefined);
 
@@ -562,6 +571,7 @@ export default function App() {
 
     const savedItem = await addCartItem(p.productId, qty);
     setCartItemIds((prev) => ({ ...prev, [id]: savedItem.id }));
+    setSelectedCartIds((prev) => new Set(prev).add(id));
     setCart((prev) => {
       const found = prev.some((line) => line.id === id);
       if (found) {
@@ -613,6 +623,11 @@ export default function App() {
         delete next[id];
         return next;
       });
+      setSelectedCartIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (error) {
       setCartError(error instanceof Error ? error.message : "장바구니 상품을 삭제하지 못했습니다.");
     } finally {
@@ -624,15 +639,64 @@ export default function App() {
     }
   }
 
+  async function removeSelectedLines() {
+    const selectedProductCodes = selectedCartLines.map(({ p }) => p.id);
+    if (selectedProductCodes.length === 0 || selectedProductCodes.some((id) => cartPendingIds.has(id))) return;
+
+    if (selectedCartLineIds.length !== selectedProductCodes.length) {
+      setCartError("장바구니 정보가 변경되었습니다. 다시 시도해 주세요.");
+      return;
+    }
+
+    if (!window.confirm(`선택한 상품 ${selectedProductCodes.length}개를 장바구니에서 삭제하시겠습니까?`)) return;
+
+    setCartPendingIds((prev) => new Set([...prev, ...selectedProductCodes]));
+    setCartError(null);
+
+    try {
+      await deleteCartItems(selectedCartLineIds);
+      const deletedCodes = new Set(selectedProductCodes);
+      setCart((prev) => prev.filter((line) => !deletedCodes.has(line.id)));
+      setCartItemIds((prev) => {
+        const next = { ...prev };
+        for (const id of deletedCodes) delete next[id];
+        return next;
+      });
+      setSelectedCartIds(new Set());
+    } catch (error) {
+      setCartError(error instanceof Error ? error.message : "선택한 장바구니 상품을 삭제하지 못했습니다.");
+    } finally {
+      setCartPendingIds((prev) => {
+        const next = new Set(prev);
+        for (const id of selectedProductCodes) next.delete(id);
+        return next;
+      });
+    }
+  }
+
   function goCheckout() {
-    if (cartLines.length === 0) return;
+    if (selectedCartLines.length === 0 || selectedCartLineIds.length !== selectedCartLines.length) return;
     navigate({ name: "checkout" });
+  }
+
+  function selectCartItem(id: string, selected: boolean) {
+    setSelectedCartIds((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function selectAllCartItems(selected: boolean) {
+    setSelectedCartIds(selected ? new Set(cartLines.map(({ p }) => p.id)) : new Set());
   }
 
   function finishOrder(orderNo: string, total: number) {
     /* 주문한 장바구니 항목은 서버가 지웠으므로 비우고 서버 기준으로 다시 불러온다 */
     setCart([]);
     setCartItemIds({});
+    setSelectedCartIds(new Set());
     setCartReloadKey((key) => key + 1);
 
     /* 누적 구매금액과 등급은 서버가 관리하므로 화면에서 따로 계산하지 않는다. */
@@ -644,7 +708,7 @@ export default function App() {
   /* 카테고리, 서브 카테고리, 등급, 정렬 조건은 백엔드가 적용한다. */
   const filtered = products;
 
-  
+
   /* 뒤로 가기로 예전 세션의 상위 등급 상품에 돌아올 수 있으므로 여기서도 막는다 */
   const detailAllowed = detailProduct !== null && canAccess(userTier, detailProduct.tier);
   const onListPage = view.name === "list";
@@ -903,9 +967,6 @@ export default function App() {
               <span className="text-xs" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
                 {TIERS[userTier].desc}
               </span>
-              <div className="flex-1" style={{ minWidth: 220, maxWidth: 420 }}>
-                <TierProgress spent={session.spent} />
-              </div>
             </div>
           )}
 
@@ -922,8 +983,22 @@ export default function App() {
             />
             <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(15,0,0,0.95) 0%, transparent 50%, rgba(15,0,0,0.95) 100%)" }} />
             <div className="relative max-w-[1280px] mx-auto px-4 md:px-8 py-10">
-              <div className="text-xs uppercase tracking-[0.3em] mb-2" style={{ color: TIERS[activeCodeTab].color, fontFamily: "Share Tech Mono" }}>
-                // {TIERS[activeCodeTab].label.toUpperCase()} — {TIERS[activeCodeTab].desc}
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1.5 mb-4"
+                style={{
+                  color: TIERS[activeCodeTab].brightColor,
+                  background: `${TIERS[activeCodeTab].color}20`,
+                  border: `1px solid ${TIERS[activeCodeTab].color}66`,
+                  fontFamily: "Share Tech Mono",
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: TIERS[activeCodeTab].brightColor, boxShadow: `0 0 8px ${TIERS[activeCodeTab].brightColor}` }}
+                />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em]">
+                  {TIERS[activeCodeTab].label}
+                </span>
               </div>
               <h1
                 className="font-bold uppercase leading-none mb-2"
@@ -938,8 +1013,11 @@ export default function App() {
                 {activeCodeTab === "purple" && "MID-TIER TACTICAL GEAR"}
                 {activeCodeTab === "yellow" && "ENTRY GRADE ARSENAL"}
               </h1>
-              <p className="text-sm" style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}>
-                {TIERS[activeCodeTab].priceRange} 범위 · {activeNav} 카테고리
+              <p className="text-sm mb-1" style={{ color: C.textDim, fontFamily: "Noto Sans KR" }}>
+                {TIERS[activeCodeTab].desc}
+              </p>
+              <p className="text-xs" style={{ color: C.textMuted, fontFamily: "Noto Sans KR" }}>
+                {activeNav}{activeSub !== "전체" ? ` / ${activeSub}` : ""} · 총 {listTotal.toLocaleString("ko-KR")}개 상품
               </p>
             </div>
           </div>
@@ -1135,8 +1213,12 @@ export default function App() {
           loading={cartLoading}
           error={cartError}
           pendingIds={cartPendingIds}
+          selectedIds={selectedCartIds}
           onQty={setQty}
           onRemove={removeLine}
+          onRemoveSelected={removeSelectedLines}
+          onSelect={selectCartItem}
+          onSelectAll={selectAllCartItems}
           onRetry={() => setCartReloadKey((key) => key + 1)}
           onContinue={() => navigate({ name: "list" })}
           onCheckout={goCheckout}
@@ -1145,8 +1227,8 @@ export default function App() {
 
       {session && authReady && view.name === "checkout" && (
         <CheckoutView
-          lines={cartLines}
-          cartItemIds={cartLineIds}
+          lines={selectedCartLines}
+          cartItemIds={selectedCartLineIds}
           onBack={() => navigate({ name: "cart" })}
           onDone={finishOrder}
         />

@@ -4,6 +4,7 @@ import type { Product } from "../../catalog";
 import { C, krw } from "../../lib/theme";
 import { FREE_SHIPPING_OVER, SHIPPING_FEE } from "../../lib/shipping";
 import { Field } from "../common/Field";
+import { OrderSummaryHeader } from "../common/OrderSummaryHeader";
 import { PageTitle } from "../common/PageTitle";
 import { Spinner } from "../common/Spinner";
 import { SummaryRow } from "../common/SummaryRow";
@@ -108,9 +109,7 @@ export function CheckoutView({
 
         {/* 주문 요약 */}
         <div className="w-full lg:w-80 shrink-0 p-5" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-          <div className="text-[10px] uppercase tracking-widest mb-4" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-            // 주문 요약
-          </div>
+          <OrderSummaryHeader itemCount={lines.length} />
 
           <div className="mb-4" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
             {lines.map(({ p, qty }) => (
