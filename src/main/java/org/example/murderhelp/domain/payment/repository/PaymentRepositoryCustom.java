@@ -12,7 +12,9 @@ public interface  PaymentRepositoryCustom {
 
     List<Object[]> findIdsByOrderIds(List<Long> orderIds);
 
-    Optional<PaymentWithItems> findByPortonePaymentId(String portonePaymentId);
+    Optional<Payment> findByPortonePaymentId(String portonePaymentId);
+
+    Optional<PaymentWithItems> findByPortonePaymentIdWithItem(String portonePaymentId);
 
     Optional<PaymentWithItems> findByOrderIdWithOrder(Long orderId);
 

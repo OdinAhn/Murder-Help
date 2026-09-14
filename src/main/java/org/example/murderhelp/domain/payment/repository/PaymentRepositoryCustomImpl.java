@@ -53,7 +53,18 @@ public class PaymentRepositoryCustomImpl implements PaymentRepositoryCustom {
 
     // Webhook에서 받아온 portonePaymentId 조건으로 Payment 조회 시 연관된 Order를 fetch join 으로 함께 로딩
     @Override
-    public Optional<PaymentWithItems> findByPortonePaymentId(String portonePaymentId) {
+    public Optional<Payment> findByPortonePaymentId(String portonePaymentId) {
+        Payment result = queryFactory
+                .selectFrom(payment)
+                .join(payment.order, order).fetchJoin()
+                .where(payment.portonePaymentId.eq(portonePaymentId))
+                .fetchOne();
+
+        return Optional.ofNullable(result);
+    }
+
+    @Override
+    public Optional<PaymentWithItems> findByPortonePaymentIdWithItem(String portonePaymentId) {
         Payment result = queryFactory
                 .selectFrom(payment)
                 .join(payment.order, order).fetchJoin()

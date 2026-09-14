@@ -30,3 +30,11 @@ aws:
 jwt:
   secret: ${JWT_SECRET}
   expiration: 3600000  # 1시간 (ms)
+
+# PortOne 결제 연동 정보 (GitHub Secrets에서 주입)
+portone:
+  base-url: "https://api.portone.io"
+  api-secret: ${PORTONE_API_SECRET}
+  store-id: ${PORTONE_STORE_ID}
+  channel-key: ${PORTONE_CHANNEL_KEY}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
