@@ -9,6 +9,7 @@ import {
 } from "./api/cart";
 import {
   fetchPopularSearches,
+  recordPopularSearch,
   fetchProductDetail,
   fetchProductList,
   searchProducts,
@@ -226,6 +227,18 @@ export default function App() {
     const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  /* 상품 결과는 빠르게 갱신하되, 인기 검색어는 입력이 끝났다고 볼 수 있는 시점에만 기록한다. */
+  useEffect(() => {
+    const keyword = searchInput.trim();
+    if (!session || !authReady || !keyword) return;
+
+    const timer = window.setTimeout(() => {
+      recordPopularSearch(keyword).catch(() => undefined);
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [session, authReady, searchInput]);
 
   useEffect(() => {
     if (!searchFocused || searchInput.trim()) return;
