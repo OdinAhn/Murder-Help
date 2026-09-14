@@ -419,9 +419,6 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setCart([]);
-        setCartItemIds({});
-        setSelectedCartIds(new Set());
         setCartError(error instanceof Error ? error.message : "장바구니를 불러오지 못했습니다.");
       })
       .finally(() => {
@@ -576,6 +573,7 @@ export default function App() {
     .filter((l): l is NonNullable<typeof l> => l !== null);
 
   const cartCount = cart.length;
+  const cartBadgeValue = cartCount > 0 ? cartCount : session && (!authReady || cartLoading) ? "…" : null;
 
   const selectedCartLines = cartLines.filter(({ p }) => selectedCartIds.has(p.id));
 
@@ -602,6 +600,7 @@ export default function App() {
       }
       return [...prev, { id, qty: savedItem.quantity }];
     });
+    setCartReloadKey((key) => key + 1);
 
     return true;
   }
@@ -618,6 +617,7 @@ export default function App() {
       setCart((prev) =>
         prev.map((line) => line.id === id ? { ...line, qty: updatedItem.quantity } : line)
       );
+      setCartReloadKey((key) => key + 1);
     } catch (error) {
       setCartError(error instanceof Error ? error.message : "장바구니 수량을 변경하지 못했습니다.");
     } finally {
@@ -649,6 +649,7 @@ export default function App() {
         next.delete(id);
         return next;
       });
+      setCartReloadKey((key) => key + 1);
     } catch (error) {
       setCartError(error instanceof Error ? error.message : "장바구니 상품을 삭제하지 못했습니다.");
     } finally {
@@ -684,6 +685,7 @@ export default function App() {
         return next;
       });
       setSelectedCartIds(new Set());
+      setCartReloadKey((key) => key + 1);
     } catch (error) {
       setCartError(error instanceof Error ? error.message : "선택한 장바구니 상품을 삭제하지 못했습니다.");
     } finally {
@@ -849,7 +851,7 @@ export default function App() {
                   <circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
                   <path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.2L21 7H6" />
                 </svg>
-                {cartCount > 0 && (
+                {cartBadgeValue !== null && (
                   <span
                     className="absolute -top-1.5 -right-1.5 text-[9px] font-bold flex items-center justify-center"
                     style={{
@@ -857,7 +859,7 @@ export default function App() {
                       background: C.red, color: "#fff", fontFamily: "Share Tech Mono",
                     }}
                   >
-                    {cartCount}
+                    {cartBadgeValue}
                   </span>
                 )}
               </button>
