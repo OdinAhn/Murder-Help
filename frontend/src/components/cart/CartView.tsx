@@ -271,7 +271,7 @@ export function CartView({
                 cursor: checkoutDisabled ? "not-allowed" : "pointer",
               }}
             >
-              상품 결제하기 →
+              상품 주문하기 →
             </button>
             <button
               onClick={onContinue}
