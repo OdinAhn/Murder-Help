@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.cart.dto.CartItemResponse;
 import org.example.murderhelp.domain.member.repository.MemberRepository;
 import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
-import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
 import org.example.murderhelp.domain.order.dto.OrderListRequest;
 import org.example.murderhelp.domain.order.dto.OrderResponse;
 import org.example.murderhelp.domain.order.entity.Order;
@@ -90,7 +89,7 @@ public class OrderService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public CreateOrderResponse createOrder(
+    public Order createOrder(
             Long memberId,
             CreateOrderRequest createOrderRequest,
             List<CartItemResponse> cartItemList,
@@ -115,7 +114,7 @@ public class OrderService {
 
         orderRepository.save(order);
         orderItemRepository.saveAll(orderItemList);
-        return CreateOrderResponse.from(order);
+        return order;
     }
 
 }

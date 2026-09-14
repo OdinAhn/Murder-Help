@@ -4,7 +4,6 @@ import org.example.murderhelp.domain.cart.dto.CartItemResponse;
 import org.example.murderhelp.domain.member.entity.Member;
 import org.example.murderhelp.domain.member.repository.MemberRepository;
 import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
-import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
 import org.example.murderhelp.domain.order.dto.OrderListPeriod;
 import org.example.murderhelp.domain.order.dto.OrderListRequest;
 import org.example.murderhelp.domain.order.dto.OrderResponse;
@@ -213,16 +212,18 @@ class OrderServiceTest {
         when(memberRepository.getReferenceById(1L)).thenReturn(member);
 
         // when
-        CreateOrderResponse response = orderService.createOrder(1L, request, cartItemList, productMap);
+        Order createdOrder = orderService.createOrder(1L, request, cartItemList, productMap);
 
         // then
         // 100,000원 x 1개 + 30,000원 x 3개
-        assertThat(response.totalAmount()).isEqualTo(190_000L);
-        assertThat(response.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
-        assertThat(response.orderNumber()).matches("ORD-\\d{14}-[0-9A-F]{8}");
+        assertThat(createdOrder.getTotalAmount()).isEqualTo(190_000L);
+        assertThat(createdOrder.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(createdOrder.getOrderNumber()).matches("ORD-\\d{14}-[0-9A-F]{8}");
 
         verify(orderRepository).save(orderCaptor.capture());
         Order savedOrder = orderCaptor.getValue();
+        // 저장한 주문을 그대로 반환해야 facade 에서 결제를 만들 수 있다
+        assertThat(createdOrder).isSameAs(savedOrder);
         assertThat(savedOrder.getMember()).isSameAs(member);
         assertThat(savedOrder.getReceiverName()).isEqualTo("홍길동");
         assertThat(savedOrder.getDeliveryRequest()).isEqualTo("문 앞에 놔주세요");

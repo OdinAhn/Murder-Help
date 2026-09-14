@@ -5,7 +5,9 @@ import org.example.murderhelp.domain.cart.dto.CartItemResponse;
 import org.example.murderhelp.domain.cart.service.CartService;
 import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
+import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.service.OrderService;
+import org.example.murderhelp.domain.payment.service.PaymentService;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.product.service.ProductCacheEvictionService;
 import org.example.murderhelp.domain.product.service.ProductService;
@@ -26,6 +28,7 @@ public class OrderFacade {
     private final ProductService productService;
     private final CartService cartService;
     private final ProductCacheEvictionService productCacheEvictionService;
+    private final PaymentService paymentService;
 
     @Transactional
     public CreateOrderResponse createOrder(Long memberId, CreateOrderRequest createOrderRequest) {
@@ -46,18 +49,19 @@ public class OrderFacade {
         }
 
         // 주문 저장
-        CreateOrderResponse createOrderResponse = orderService.createOrder(
+        Order savedOrder = orderService.createOrder(
                 memberId,
                 createOrderRequest,
                 cartItemList,
                 productMap
         );
 
-        // 장바구니 비우기 (주문한 것만)
-        cartService.deleteItems(memberId, createOrderRequest.cartItemIds());
+        // payment 생성
+        paymentService.createPayment(savedOrder, savedOrder.getTotalAmount().intValue());
+
         productCacheEvictionService.evictProductCaches();
 
-        return createOrderResponse;
+        return CreateOrderResponse.from(savedOrder);
     }
 
 

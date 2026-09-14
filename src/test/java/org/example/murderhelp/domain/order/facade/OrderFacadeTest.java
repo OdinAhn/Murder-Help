@@ -17,8 +17,9 @@ import org.example.murderhelp.domain.cart.dto.CartItemResponse;
 import org.example.murderhelp.domain.cart.service.CartService;
 import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
-import org.example.murderhelp.domain.order.entity.OrderStatus;
+import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.service.OrderService;
+import org.example.murderhelp.domain.payment.service.PaymentService;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.product.service.ProductCacheEvictionService;
 import org.example.murderhelp.domain.product.service.ProductService;
@@ -50,6 +51,9 @@ class OrderFacadeTest {
     private ProductCacheEvictionService productCacheEvictionService;
 
     @Mock
+    private PaymentService paymentService;
+
+    @Mock
     private Product product;
 
     private final Long memberId = 7L;
@@ -63,22 +67,27 @@ class OrderFacadeTest {
     private final List<CartItemResponse> cartItems = List.of(new CartItemResponse(10L, 100L, 2));
 
     @Test
-    @DisplayName("재고를 차감하고 주문 저장 후 장바구니와 상품 캐시를 갱신한다")
+    @DisplayName("재고를 차감하고 주문 저장 후 결제 생성과 상품 캐시를 갱신한다")
     void shouldDecreaseStockAndSaveOrderBeforeEvictingCaches() {
         givenOrderableCart();
-        CreateOrderResponse response = new CreateOrderResponse(1L, "ORD-TEST", OrderStatus.PENDING_PAYMENT, 2000L);
+        Order order = Order.builder()
+                .orderNumber("ORD-TEST")
+                .totalAmount(2000L)
+                .build();
         when(orderService.createOrder(memberId, request, cartItems, Map.of(100L, product)))
-                .thenReturn(response);
+                .thenReturn(order);
 
-        assertThat(orderFacade.createOrder(memberId, request)).isSameAs(response);
+        assertThat(orderFacade.createOrder(memberId, request)).isEqualTo(CreateOrderResponse.from(order));
 
-        var sequence = inOrder(cartService, productService, product, orderService, productCacheEvictionService);
+        var sequence = inOrder(cartService, productService, product, orderService, paymentService, productCacheEvictionService);
         sequence.verify(cartService).getItems(memberId, request.cartItemIds());
         sequence.verify(productService).getProducts(List.of(100L));
         sequence.verify(product).decreaseStock(2);
         sequence.verify(orderService).createOrder(memberId, request, cartItems, Map.of(100L, product));
-        sequence.verify(cartService).deleteItems(memberId, request.cartItemIds());
+        sequence.verify(paymentService).createPayment(order, 2000);
         sequence.verify(productCacheEvictionService).evictProductCaches();
+        // 장바구니 삭제는 결제 확정 시점(PaymentCommandService)으로 옮겨졌다
+        verify(cartService, never()).deleteItems(anyLong(), anyList());
     }
 
     @Test
@@ -89,7 +98,7 @@ class OrderFacadeTest {
 
         assertThatThrownBy(() -> orderFacade.createOrder(memberId, request)).isSameAs(failure);
 
-        verifyNoInteractions(productService, orderService, productCacheEvictionService);
+        verifyNoInteractions(productService, orderService, paymentService, productCacheEvictionService);
         verify(cartService, never()).deleteItems(anyLong(), anyList());
     }
 
@@ -102,7 +111,7 @@ class OrderFacadeTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT);
 
-        verifyNoInteractions(productService, orderService, productCacheEvictionService);
+        verifyNoInteractions(productService, orderService, paymentService, productCacheEvictionService);
         verify(cartService, never()).deleteItems(anyLong(), anyList());
     }
 
@@ -115,7 +124,7 @@ class OrderFacadeTest {
 
         assertThatThrownBy(() -> orderFacade.createOrder(memberId, request)).isSameAs(failure);
 
-        verifyNoInteractions(orderService, productCacheEvictionService);
+        verifyNoInteractions(orderService, paymentService, productCacheEvictionService);
         verify(cartService, never()).deleteItems(anyLong(), anyList());
     }
 
@@ -129,7 +138,7 @@ class OrderFacadeTest {
 
         assertThatThrownBy(() -> orderFacade.createOrder(memberId, request)).isSameAs(failure);
 
-        verifyNoInteractions(productCacheEvictionService);
+        verifyNoInteractions(paymentService, productCacheEvictionService);
         verify(cartService, never()).deleteItems(anyLong(), anyList());
     }
 
