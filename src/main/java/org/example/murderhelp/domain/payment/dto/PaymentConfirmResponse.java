@@ -5,7 +5,7 @@ import org.example.murderhelp.domain.payment.entity.Payment;
 public record PaymentConfirmResponse(
         Long paymentId,
         Long orderId,
-        int amount,
+        Long amount,
         String paymentStatus,
         String orderStatus,
         String message

@@ -7,6 +7,7 @@ import org.example.murderhelp.domain.order.dto.CreateOrderRequest;
 import org.example.murderhelp.domain.order.dto.CreateOrderResponse;
 import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.service.OrderService;
+import org.example.murderhelp.domain.payment.entity.Payment;
 import org.example.murderhelp.domain.payment.service.PaymentService;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.product.service.ProductCacheEvictionService;
@@ -57,11 +58,11 @@ public class OrderFacade {
         );
 
         // payment 생성
-        paymentService.createPayment(savedOrder, savedOrder.getTotalAmount().intValue());
+        Payment savedPayment = paymentService.createPayment(savedOrder, savedOrder.getTotalAmount());
 
         productCacheEvictionService.evictProductCaches();
 
-        return CreateOrderResponse.from(savedOrder);
+        return CreateOrderResponse.from(savedOrder, savedPayment);
     }
 
 

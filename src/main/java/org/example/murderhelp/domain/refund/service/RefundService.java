@@ -76,7 +76,7 @@ public class RefundService {
         Map<Long, Integer> refundedMap = refundItemRepository.findRefundedQuantitiesByOrderItemIds(itemIds).stream()
                 .collect(toMap(
                         RefundedQuantity::orderItemId,
-                        RefundedQuantity::refundedQuantity
+                        rq -> rq.refundedQuantity().intValue()
                 ));
 
         return orderItems.stream().collect(toMap(
@@ -217,6 +217,7 @@ public class RefundService {
         for (RefundItem refundItem : calcResult.refundItems()) {
             refundItem.assignRefund(savedRefund);
         }
+        refundItemRepository.saveAll(calcResult.refundItems());
 
         return savedRefund;
     }

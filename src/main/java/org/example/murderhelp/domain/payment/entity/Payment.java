@@ -31,10 +31,10 @@ public class Payment extends BaseTimeEntity {
     private String portonePaymentId;
 
     @Column(name = "amount", nullable = false)
-    private int amount;
+    private Long amount;
 
     @Column(name = "pg_amount", nullable = false)
-    private int pgAmount;
+    private Long pgAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -48,7 +48,7 @@ public class Payment extends BaseTimeEntity {
     private LocalDateTime paidAt;
 
     @Builder
-    private Payment(Order order, int amount, int pointUsedAmount) {
+    private Payment(Order order, Long amount) {
         // 1. 음수 방지
         if (amount < 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
@@ -57,7 +57,6 @@ public class Payment extends BaseTimeEntity {
         this.order = order;
         this.portonePaymentId = generatePortonePaymentId();
         this.amount = amount;
-        this.pgAmount = amount - pointUsedAmount;
         this.status = PaymentStatus.PENDING;
     }
 

@@ -24,7 +24,7 @@ public class PaymentService {
 
     // 결제 생성 — pgAmount는 Payment 생성자가 스스로 계산
     @Transactional
-    public Payment createPayment(Order order, int amount) {
+    public Payment createPayment(Order order, Long amount) {
         Payment payment = Payment.builder()
                 .order(order)
                 .amount(amount)

@@ -11,7 +11,7 @@ public record PortOnePaymentResponse(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record PaymentAmount(
-            int total,     // 총 결제 금액
-            int cancelled  // 총 취소(환불) 금액
+            Long total,     // 총 결제 금액
+            Long cancelled  // 총 취소(환불) 금액
     ) {}
 }
