@@ -3,6 +3,7 @@ package org.example.murderhelp.domain.chat.service;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import lombok.RequiredArgsConstructor;
 import org.example.murderhelp.domain.chat.bot.BotScenario;
+import org.example.murderhelp.domain.chat.bot.dto.BotMessageDto;
 import org.example.murderhelp.domain.chat.dto.ChatMessageResponse;
 import org.example.murderhelp.domain.chat.dto.ChatMessageSendRequest;
 import org.example.murderhelp.domain.chat.entity.ChatMessage;
@@ -115,8 +116,13 @@ public class ChatMessageService {
 
     @Transactional
     public void sendBotScenarioMessage(ChatRoom room, BotScenario scenario) {
+        sendBotMessage(room, scenario.getMessageDto());
+    }
+
+    @Transactional
+    public void sendBotMessage(ChatRoom room, BotMessageDto messageDto) {
         try {
-            String json = objectMapper.writeValueAsString(scenario.getMessageDto());
+            String json = objectMapper.writeValueAsString(messageDto);
             ChatMessage botMsg = ChatMessage.builder()
                     .chatRoom(room)
                     .sender(memberService.getSystemBotMember())

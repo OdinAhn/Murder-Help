@@ -62,6 +62,9 @@ public class ChatRoomService {
         ChatRoom room = getRoomEntity(roomId);
         room.closeRoom();
 
+        // 방이 종료되면 Redis에 쌓인 해당 방의 마지막 메시지 캐시 삭제 (메모리 누수 방지)
+        redisTemplate.opsForHash().delete("chat_last_messages", roomId.toString());
+
         eventPublisher.publishEvent(ChatRoomUpdatedEvent.from(room));
     }
 

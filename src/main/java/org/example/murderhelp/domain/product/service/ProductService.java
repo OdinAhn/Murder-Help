@@ -18,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -36,6 +37,14 @@ public class ProductService {
             return List.of();
         }
         return productRepository.findAllByIdInForUpdate(productIds.stream().distinct().toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Product> getNewestProducts(ProductTier userTier) {
+        List<ProductTier> allowedTiers = Arrays.stream(ProductTier.values())
+                .filter(userTier::canAccess)
+                .toList();
+        return productRepository.findNewestProductsByTiers(ProductStatus.DISCONTINUED, allowedTiers, PageRequest.of(0, 5));
     }
 
     @Cacheable(
