@@ -11,6 +11,7 @@ import java.util.List;
 
 @Builder
 public record OrderResponse(
+        Long paymentId,
         String orderNumber,
         OrderStatus status,
         Long totalAmount,
@@ -21,8 +22,9 @@ public record OrderResponse(
         List<Item> items
 ) {
 
-    public static OrderResponse from(Order order, List<Item> items) {
+    public static OrderResponse from(Order order, Long paymentId, List<Item> items) {
         return OrderResponse.builder()
+                .paymentId(paymentId)
                 .orderNumber(order.getOrderNumber())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())

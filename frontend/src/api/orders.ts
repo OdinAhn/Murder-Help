@@ -94,6 +94,7 @@ export type OrderItemData = {
 /* orderedAt(주문일시) · canceledAt(취소일) · trackingNumber(송장번호) · paymentMethod(결제 수단)도
    아직 백엔드 OrderResponse 에 없다 */
 export type OrderData = {
+  paymentId: number;
   orderedAt?: string;
   canceledAt?: string;
   trackingNumber?: string;

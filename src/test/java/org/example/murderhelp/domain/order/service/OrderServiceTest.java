@@ -12,6 +12,7 @@ import org.example.murderhelp.domain.order.entity.OrderItem;
 import org.example.murderhelp.domain.order.entity.OrderStatus;
 import org.example.murderhelp.domain.order.repository.OrderItemRepository;
 import org.example.murderhelp.domain.order.repository.OrderRepository;
+import org.example.murderhelp.domain.payment.repository.PaymentRepository;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.review.repository.ReviewRepository;
 import org.example.murderhelp.global.error.BusinessException;
@@ -65,6 +66,9 @@ class OrderServiceTest {
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private PaymentRepository paymentRepository;
 
     @Captor
     private ArgumentCaptor<Order> orderCaptor;
@@ -125,6 +129,8 @@ class OrderServiceTest {
                 .thenReturn(new PageImpl<>(List.of(order1, order2), pageable, 2));
         when(orderItemRepository.findAllByOrderIdIn(List.of(10L, 20L)))
                 .thenReturn(List.of(orderItem1, orderItem2));
+        when(paymentRepository.findIdsByOrderIds(List.of(10L, 20L)))
+                .thenReturn(List.of());
 
         // when
         Page<OrderResponse> result = orderService.getOrderList(1L, request, pageable);

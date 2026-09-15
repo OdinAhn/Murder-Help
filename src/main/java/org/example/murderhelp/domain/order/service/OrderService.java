@@ -10,6 +10,7 @@ import org.example.murderhelp.domain.order.entity.Order;
 import org.example.murderhelp.domain.order.entity.OrderItem;
 import org.example.murderhelp.domain.order.repository.OrderItemRepository;
 import org.example.murderhelp.domain.order.repository.OrderRepository;
+import org.example.murderhelp.domain.payment.repository.PaymentRepository;
 import org.example.murderhelp.domain.product.entity.Product;
 import org.example.murderhelp.domain.review.entity.Review;
 import org.example.murderhelp.domain.review.repository.ReviewRepository;
@@ -35,6 +36,7 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final MemberRepository memberRepository;
     private final ReviewRepository reviewRepository;
+    private final PaymentRepository paymentRepository;
 
     public Page<OrderResponse> getOrderList(Long memberId, OrderListRequest orderListRequest, Pageable pageable) {
         Page<Order> orderPage = orderRepository.findAllListPage(
@@ -48,30 +50,27 @@ public class OrderService {
             return Page.empty(pageable);
         }
 
-        List<Long> orderIds = orderPage.getContent().stream()
-                .map(Order::getId)
-                .toList();
+        List<Long> orderIds = orderPage.getContent().stream().map(Order::getId).toList();
 
         List<OrderItem> orderItemList = orderItemRepository.findAllByOrderIdIn(orderIds);
-
         List<Long> orderItemIds = orderItemList.stream().map(OrderItem::getId).toList();
 
-        Map<Long, List<OrderItem>> orderItemsMap =
-                orderItemList.stream()
-                        .collect(Collectors.groupingBy(orderItem -> orderItem.getOrder().getId()));
+        Map<Long, List<OrderItem>> orderItemsMap = orderItemList.stream()
+                .collect(Collectors.groupingBy(orderItem -> orderItem.getOrder().getId()));
 
-        Map<Long, Review> reviewMap =
-                reviewRepository.findAllByOrderItemIdIn(orderItemIds).stream()
-                        .collect(Collectors.toMap(Review::getOrderItemId, r -> r));
+        Map<Long, Review> reviewMap = reviewRepository.findAllByOrderItemIdIn(orderItemIds).stream()
+                .collect(Collectors.toMap(Review::getOrderItemId, r -> r));
+
+        // orderId -> paymentId 매핑 (N+1 방지, 기존에 만들어둔 findIdsByOrderIds 재사용)
+        Map<Long, Long> paymentIdByOrderId = paymentRepository.findIdsByOrderIds(orderIds).stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
 
         return orderPage.map(order -> {
-            List<OrderResponse.Item> items = orderItemsMap
-                    .getOrDefault(order.getId(), List.of())
-                    .stream()
+            List<OrderResponse.Item> items = orderItemsMap.getOrDefault(order.getId(), List.of()).stream()
                     .map(orderItem -> OrderResponse.Item.from(orderItem, reviewMap.get(orderItem.getId())))
                     .toList();
 
-            return OrderResponse.from(order, items);
+            return OrderResponse.from(order, paymentIdByOrderId.get(order.getId()), items);
         });
     }
 
@@ -84,8 +83,9 @@ public class OrderService {
         }
 
         List<OrderItem> orderItemList = orderItemRepository.findAllByOrder_Id(orderId);
+        Long paymentId = paymentRepository.findIdByOrderId(orderId).orElse(null);
 
-        return OrderResponse.from(order, orderItemList.stream().map(OrderResponse.Item::from).toList());
+        return OrderResponse.from(order, paymentId, orderItemList.stream().map(OrderResponse.Item::from).toList());
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
