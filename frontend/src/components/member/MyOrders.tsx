@@ -120,7 +120,13 @@ export function MyOrders({ onShop, onWriteReview, refreshKey = 0 }: Props) {
   }
 
   if (detail) {
-    return <OrderDetail order={detail} onBack={() => setDetail(null)} />;
+    return (
+        <OrderDetail
+            order={detail}
+            onBack={() => setDetail(null)}
+            onOrderUpdated={(updated) => setDetail(updated)}
+        />
+    );
   }
 
   const periodLabel = PERIODS.find(([value]) => value === period)?.[1];

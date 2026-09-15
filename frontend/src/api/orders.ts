@@ -94,6 +94,7 @@ export type OrderItemData = {
 /* orderedAt(주문일시) · canceledAt(취소일) · trackingNumber(송장번호) · paymentMethod(결제 수단)도
    아직 백엔드 OrderResponse 에 없다 */
 export type OrderData = {
+  orderId: number;
   paymentId: number;
   orderedAt?: string;
   canceledAt?: string;
@@ -157,4 +158,18 @@ export async function fetchMyOrders(
     totalPages: body.data.totalPages,
     hasNext: !body.data.last,
   };
+}
+
+/** GET /api/orders/{orderId} — 주문 단건 상세 조회 (환불 후 갱신 등에 사용) */
+export async function fetchOrder(orderId: number): Promise<OrderData> {
+  const response = await authFetch(`/api/orders/${orderId}`, {
+    headers: { Accept: "application/json" },
+  });
+
+  const body = (await response.json().catch(() => null)) as ApiResponse<OrderData> | null;
+  if (!response.ok || !body || body.code !== "SUCCESS" || !body.data) {
+    throw new Error(body?.message ?? `주문 정보를 불러오지 못했습니다 (${response.status})`);
+  }
+
+  return body.data;
 }
