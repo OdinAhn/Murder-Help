@@ -455,7 +455,7 @@ export function MyPage({ onBack }: { onBack: () => void }) {
                 <main className="flex-1 min-w-0 p-6 md:p-9">
                     {section === "profile" && (
                         <>
-                            <PageTitle note="// 프로필 이미지와 회원 정보를 관리합니다">
+                            <PageTitle>
                                 My Information
                             </PageTitle>
 

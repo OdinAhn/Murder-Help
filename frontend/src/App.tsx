@@ -879,7 +879,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => navigate({ name: "mypage" })}
-                    className="text-xs px-3 py-1.5 uppercase tracking-wider transition-all"
+                    className="shrink-0 whitespace-nowrap text-xs px-3 py-1.5 uppercase tracking-wider transition-all"
                     style={{
                       border: `1px solid ${view.name === "mypage" ? C.red : C.panelBorder}`,
                       color: view.name === "mypage" ? C.text : C.textDim,

@@ -38,7 +38,11 @@ export function LoginModal({ onLogin, onClose }: LoginModalProps) {
   }
 
   function completeLogin(member: Member) {
-    onLogin(String(member.id), spentFromGrade(member.grade), member.grade.toLowerCase() as Tier);
+    onLogin(
+        String(member.id),
+        spentFromGrade(member.grade),
+        member.grade.toLowerCase() as Tier,
+    );
   }
 
   async function handleLogin(event: FormEvent) {
@@ -128,20 +132,11 @@ export function LoginModal({ onLogin, onClose }: LoginModalProps) {
             onClick={(event) => event.stopPropagation()}
         >
           <h2
-              className="text-2xl font-bold uppercase mb-1 tracking-wide"
+              className="text-2xl font-bold uppercase mb-6 tracking-wide"
               style={{ fontFamily: "Cinzel, serif", color: C.text }}
           >
             {mode === "login" ? "Member Login" : "Join MurderHelp"}
           </h2>
-
-          <p
-              className="text-xs mb-6"
-              style={{ color: C.textMuted, fontFamily: "Share Tech Mono, monospace" }}
-          >
-            {mode === "login"
-                ? "// 이메일과 비밀번호로 로그인합니다"
-                : "// 가입 후 자동으로 로그인됩니다"}
-          </p>
 
           {mode === "login" && (
               <>
@@ -196,7 +191,13 @@ export function LoginModal({ onLogin, onClose }: LoginModalProps) {
                         cursor: busy ? "wait" : "pointer",
                       }}
                   >
-                    {busy ? <><Spinner /> 로그인 중…</> : "Login →"}
+                    {busy ? (
+                        <>
+                          <Spinner /> 로그인 중…
+                        </>
+                    ) : (
+                        "Login →"
+                    )}
                   </button>
                 </form>
 
@@ -327,7 +328,13 @@ export function LoginModal({ onLogin, onClose }: LoginModalProps) {
                       cursor: busy ? "wait" : "pointer",
                     }}
                 >
-                  {busy ? <><Spinner /> 가입 중…</> : "가입하기 →"}
+                  {busy ? (
+                      <>
+                        <Spinner /> 가입 중…
+                      </>
+                  ) : (
+                      "가입하기 →"
+                  )}
                 </button>
 
                 <button
