@@ -143,6 +143,18 @@ export async function recordPopularSearch(keyword: string): Promise<void> {
   if (!response.ok) throw new Error(`인기 검색어 기록에 실패했습니다 (${response.status})`);
 }
 
+/** POST /api/admin/product-rankings/refresh — GREEN 관리자용 인기 상품 추천 갱신 */
+export async function refreshProductRankings(): Promise<void> {
+  const response = await authFetch("/api/admin/product-rankings/refresh", {
+    method: "POST",
+  });
+  const body = (await response.json().catch(() => null)) as ApiEnvelope<undefined> | null;
+
+  if (!response.ok || body?.code !== "SUCCESS") {
+    throw new Error(body?.message ?? "상품 추천 갱신에 실패했습니다.");
+  }
+}
+
 /* ─── 상품 상세 ───────────────────────────────────────────── */
 type ProductSpecApiResponse = {
   name: string;

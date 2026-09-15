@@ -22,6 +22,7 @@ import {
 import {NAV_ITEMS, Product, SUBCATS, type Tier} from "./catalog";
 import { Gate } from "./components/auth/Gate";
 import { LoginModal } from "./components/auth/LoginModal";
+import { ProductRankingAdmin } from "./components/admin/ProductRankingAdmin";
 import { getMe, logout } from "./api/auth";
 import { onAuthExpired, reissue } from "./api/client";
 import { CartView } from "./components/cart/CartView";
@@ -80,7 +81,8 @@ type View =
   | { name: "cart" }
   | { name: "checkout" }
   | { name: "done"; orderNo: string; total: number }
-  | { name: "mypage" };
+  | { name: "mypage" }
+  | { name: "admin" };
 
 /* ─── 공통 조각 ──────────────────────────────────────────── */
 function Field({
@@ -892,6 +894,19 @@ export default function App() {
                   >
                     마이페이지
                   </button>
+                  {userTier === "green" && (
+                    <button
+                      onClick={() => navigate({ name: "admin" })}
+                      className="shrink-0 whitespace-nowrap text-xs px-3 py-1.5 uppercase tracking-wider transition-all"
+                      style={{
+                        border: `1px solid ${view.name === "admin" ? "#10b981" : C.panelBorder}`,
+                        color: view.name === "admin" ? "#34d399" : C.textDim,
+                        fontFamily: "Share Tech Mono",
+                      }}
+                    >
+                      관리자 페이지
+                    </button>
+                  )}
                 </div>
               ) : (
                 <button
@@ -1236,6 +1251,10 @@ export default function App() {
 
       {session && authReady && view.name === "mypage" && (
         <MyPage onBack={() => navigate({ name: "list" })} />
+      )}
+
+      {session && authReady && userTier === "green" && view.name === "admin" && (
+        <ProductRankingAdmin onBack={() => navigate({ name: "list" })} />
       )}
 
       {session && authReady && view.name === "cart" && (
