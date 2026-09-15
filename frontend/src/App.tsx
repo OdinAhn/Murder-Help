@@ -207,8 +207,9 @@ export default function App() {
   const [sortKey, setSortKey] = useState<ApiProductSort>("POPULAR");
   const [searchInput, setSearchInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [searchRequestVersion, setSearchRequestVersion] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
-  const recordedSearchKeyword = useRef<string | null>(null);
+  const pendingPopularSearch = useRef<string | null>(null);
   const [popularSearches, setPopularSearches] = useState<PopularSearch[]>([]);
   const [detailProduct, setDetailProduct] = useState<ProductDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -223,28 +224,19 @@ export default function App() {
     });
   }
 
-  /* 검색창 입력을 살짝 늦춰서 반영한다(타이핑마다 API를 호출하지 않도록) */
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearchKeyword(searchInput.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
-
   function handleSearchInputChange(value: string) {
     setSearchInput(value);
-    if (value.trim() !== recordedSearchKeyword.current) {
-      recordedSearchKeyword.current = null;
-    }
   }
 
-  /* 입력 중에는 기록하지 않고, Enter 또는 검색창 이탈로 검색 의도가 확정됐을 때만 기록한다. */
-  function recordFinalSearch() {
-    const keyword = searchInput.trim();
-    if (!session || !authReady || !keyword || recordedSearchKeyword.current === keyword) return;
-
-    recordedSearchKeyword.current = keyword;
-    recordPopularSearch(keyword).catch(() => {
-      recordedSearchKeyword.current = null;
-    });
+  function submitSearch(keyword = searchInput.trim()) {
+    const normalizedKeyword = keyword.trim();
+    pendingPopularSearch.current = normalizedKeyword || null;
+    setSearchInput(normalizedKeyword);
+    setSearchKeyword(normalizedKeyword);
+    setSearchRequestVersion((version) => version + 1);
+    setSearchFocused(false);
+    setMenuOpen(false);
+    navigate({ name: "list" });
   }
 
   useEffect(() => {
@@ -304,9 +296,17 @@ export default function App() {
         setListHasNext(res.hasNext);
         setListTotal(res.totalElements);
         cacheProducts(res.items);
+
+        if (pendingPopularSearch.current === searchKeyword && searchKeyword) {
+          pendingPopularSearch.current = null;
+          recordPopularSearch(searchKeyword).catch(() => undefined);
+        }
       })
       .catch(() => {
         if (cancelled) return;
+        if (pendingPopularSearch.current === searchKeyword) {
+          pendingPopularSearch.current = null;
+        }
         setListItems([]);
         setListHasNext(false);
         setListTotal(0);
@@ -320,7 +320,7 @@ export default function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, authReady, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword]);
+  }, [session, authReady, userTier, view.name, activeNav, activeSub, activeCodeTab, sortKey, isSearching, searchKeyword, searchRequestVersion]);
 
   function loadMoreProducts() {
     if (!userTier || !listHasNext || listLoading) return;
@@ -794,19 +794,18 @@ export default function App() {
               {/* search */}
               <div className="relative hidden md:flex items-center gap-2 px-3 py-1.5 text-xs"
                 style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${C.panelBorder}` }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                </svg>
+                <button type="button" onClick={() => submitSearch()} aria-label="검색">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                  </svg>
+                </button>
                 <input
                   value={searchInput}
                   onChange={(e) => handleSearchInputChange(e.target.value)}
                   onFocus={() => setSearchFocused(true)}
-                  onBlur={() => {
-                    setSearchFocused(false);
-                    recordFinalSearch();
-                  }}
+                  onBlur={() => setSearchFocused(false)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") recordFinalSearch();
+                    if (e.key === "Enter") submitSearch();
                   }}
                   placeholder="검색..."
                   className="bg-transparent outline-none w-20 text-xs"
@@ -826,8 +825,7 @@ export default function App() {
                         type="button"
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
-                          setSearchInput(search.keyword);
-                          setSearchFocused(false);
+                          submitSearch(search.keyword);
                         }}
                         className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs"
                         style={{ color: C.textDim }}
@@ -923,18 +921,17 @@ export default function App() {
           <div style={{ background: "rgba(12,0,0,0.98)", borderTop: `1px solid ${C.panelBorder}` }}>
             {/* 모바일에서는 헤더에 검색창이 없으므로 메뉴 맨 위에 둔다. Enter 를 누르면 메뉴를 닫고 결과 목록으로 간다 */}
             <div className="flex items-center gap-2 px-6 py-3" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
+              <button type="button" onClick={() => submitSearch()} aria-label="검색">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+              </button>
               <input
                 value={searchInput}
                 onChange={(e) => handleSearchInputChange(e.target.value)}
-                onBlur={recordFinalSearch}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
-                  recordFinalSearch();
-                  setMenuOpen(false);
-                  navigate({ name: "list" });
+                  submitSearch();
                 }}
                 placeholder="검색..."
                 className="flex-1 bg-transparent outline-none text-sm"
