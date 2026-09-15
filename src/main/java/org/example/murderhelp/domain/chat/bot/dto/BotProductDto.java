@@ -1,7 +1,7 @@
 package org.example.murderhelp.domain.chat.bot.dto;
 
 public record BotProductDto(
-    String id,
+    Long id,
     String name,
     Integer price
 ) {}

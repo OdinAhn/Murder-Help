@@ -3,7 +3,6 @@ import { fetchRefundableItems, requestRefund, type RefundableItem } from "../../
 import { C, krw } from "../../lib/theme";
 import { Spinner } from "../common/Spinner";
 
-/* 고객 귀책(반품 배송비 부담) / 판매자 귀책(무료) 구분을 위해 분류해 둔 사유 목록 */
 const REASONS = [
   { value: "SIMPLE_CHANGE", label: "단순 변심" },
   { value: "SIZE_COLOR_MISMATCH", label: "색상/사이즈가 마음에 안 듦" },
@@ -17,6 +16,8 @@ const REASONS = [
   { value: "ETC", label: "기타" },
 ] as const;
 
+type RefundLine = RefundableItem & { selectedQuantity: number };
+
 export function RefundModal({
                               paymentId,
                               onClose,
@@ -26,7 +27,7 @@ export function RefundModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [items, setItems] = useState<RefundableItem[] | null>(null);
+  const [lines, setLines] = useState<RefundLine[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [reason, setReason] = useState("");
   const [detail, setDetail] = useState("");
@@ -36,29 +37,40 @@ export function RefundModal({
   useEffect(() => {
     let active = true;
     fetchRefundableItems(paymentId)
-        .then((data) => {
-          if (active) setItems(data);
+        .then((items) => {
+          if (!active) return;
+          setLines(items.map((item) => ({ ...item, selectedQuantity: 0 })));
         })
         .catch((error: unknown) => {
-          if (active) setLoadError(error instanceof Error ? error.message : "환불 가능 상품을 불러오지 못했습니다.");
+          if (!active) return;
+          setLoadError(error instanceof Error ? error.message : "환불 가능 상품을 불러오지 못했습니다.");
         });
     return () => {
       active = false;
     };
   }, [paymentId]);
 
-  /* 부분 환불 없이, 남은 수량이 있는 상품 전체를 자동으로 대상에 포함한다 */
-  const refundableLines = useMemo(() => (items ?? []).filter((i) => i.remainQuantity > 0), [items]);
+  const refundableLines = useMemo(() => (lines ?? []).filter((l) => l.remainQuantity > 0), [lines]);
   const totalQuantity = useMemo(
-      () => refundableLines.reduce((sum, l) => sum + l.remainQuantity, 0),
+      () => refundableLines.reduce((sum, l) => sum + l.selectedQuantity, 0),
       [refundableLines],
   );
   const totalAmount = useMemo(
-      () => refundableLines.reduce((sum, l) => sum + l.remainQuantity * l.orderPrice, 0),
+      () => refundableLines.reduce((sum, l) => sum + l.selectedQuantity * l.orderPrice, 0),
       [refundableLines],
   );
 
-  const canSubmit = refundableLines.length > 0 && reason !== "" && !submitting;
+  function changeQuantity(orderItemId: number, next: number) {
+    setLines((prev) =>
+        (prev ?? []).map((l) =>
+            l.orderItemId === orderItemId
+                ? { ...l, selectedQuantity: Math.max(0, Math.min(next, l.remainQuantity)) }
+                : l,
+        ),
+    );
+  }
+
+  const canSubmit = totalQuantity > 0 && reason !== "" && !submitting;
 
   async function submit() {
     if (!canSubmit) return;
@@ -73,10 +85,9 @@ export function RefundModal({
       await requestRefund({
         paymentId,
         cancelReason,
-        items: refundableLines.map((l) => ({
-          orderItemId: l.orderItemId,
-          requestQuantity: l.remainQuantity,
-        })),
+        items: refundableLines
+            .filter((l) => l.selectedQuantity > 0)
+            .map((l) => ({ orderItemId: l.orderItemId, requestQuantity: l.selectedQuantity })),
       });
       onSuccess();
     } catch (error) {
@@ -122,7 +133,7 @@ export function RefundModal({
                   {loadError}
                 </p>
               </div>
-          ) : !items ? (
+          ) : !lines ? (
               <div className="flex items-center justify-center gap-2 py-16">
                 <Spinner color={C.redBright} />
                 <span className="text-xs" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
@@ -137,10 +148,10 @@ export function RefundModal({
               </div>
           ) : (
               <>
-                {/* 환불 대상 안내 — 전체 환불만 지원 */}
+                {/* 환불 수량 선택 */}
                 <div className="px-5 pt-4 pb-2">
                   <p className="text-[11px]" style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}>
-                    환불 대상 상품 (전체 환불)
+                    환불 수량 선택
                   </p>
                 </div>
 
@@ -160,15 +171,29 @@ export function RefundModal({
                             {line.productName}
                           </div>
                           <div className="text-[10px]" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-                            단가 {krw(line.orderPrice)} · {line.remainQuantity}개
+                            단가 {krw(line.orderPrice)}
                           </div>
                         </div>
-                        <span
-                            className="text-xs shrink-0"
-                            style={{ color: C.text, fontFamily: "Share Tech Mono" }}
-                        >
-                    {krw(line.orderPrice * line.remainQuantity)}
-                  </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <StepButton
+                              disabled={line.selectedQuantity <= 0}
+                              onClick={() => changeQuantity(line.orderItemId, line.selectedQuantity - 1)}
+                          >
+                            −
+                          </StepButton>
+                          <span
+                              className="text-xs text-center"
+                              style={{ width: 40, color: C.text, fontFamily: "Share Tech Mono" }}
+                          >
+                      {line.selectedQuantity} / {line.remainQuantity}
+                    </span>
+                          <StepButton
+                              disabled={line.selectedQuantity >= line.remainQuantity}
+                              onClick={() => changeQuantity(line.orderItemId, line.selectedQuantity + 1)}
+                          >
+                            +
+                          </StepButton>
+                        </div>
                       </div>
                   ))}
                 </div>
@@ -271,5 +296,35 @@ export function RefundModal({
           )}
         </div>
       </div>
+  );
+}
+
+function StepButton({
+                      children,
+                      disabled,
+                      onClick,
+                    }: {
+  children: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+      <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className="flex items-center justify-center text-xs"
+          style={{
+            width: 22,
+            height: 22,
+            border: `1px solid ${disabled ? C.panelBorder : C.textDim}`,
+            color: disabled ? C.textMuted : C.text,
+            background: "rgba(0,0,0,0.4)",
+            cursor: disabled ? "not-allowed" : "pointer",
+            opacity: disabled ? 0.4 : 1,
+          }}
+      >
+        {children}
+      </button>
   );
 }

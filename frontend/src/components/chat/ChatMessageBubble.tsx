@@ -82,14 +82,35 @@ export function ChatMessageBubble({ message: m, customerId, isAdmin, isCompleted
             </svg>
             <span className="text-xs text-emerald-400 font-semibold tracking-widest font-mono pt-[1px]">SYSTEM MENU</span>
           </div>
-          <div className="text-[12.5px] tracking-tight text-zinc-300 leading-relaxed text-center mb-4 break-keep whitespace-pre-wrap">{botData.text}</div>
+          <div 
+            className={`text-[12.5px] tracking-tight text-zinc-300 leading-relaxed w-full px-2 mb-4 ${botData.text.includes('최근 주문 내역 안내') ? 'cursor-pointer hover:bg-zinc-800/40 p-2 rounded-lg transition-colors border border-transparent hover:border-zinc-700/50' : ''}`}
+            onClick={() => {
+              if (botData.text.includes('최근 주문 내역 안내')) {
+                window.history.pushState({ view: { name: "mypage" } }, "");
+                window.dispatchEvent(new PopStateEvent("popstate", { state: { view: { name: "mypage" } } }));
+              }
+            }}
+          >
+            {botData.text.split('\n').map((line, idx) => (
+              <div key={idx} className={idx === 0 ? "text-center mb-1 font-semibold" : "text-left break-keep"}>
+                {line}
+              </div>
+            ))}
+          </div>
           
           {botData.products && botData.products.length > 0 && (
             <div className="w-full flex flex-col gap-2 mb-3">
               {botData.products.map((p, pIdx) => (
-                <div key={pIdx} className="text-xs p-2.5 rounded-lg flex justify-between bg-zinc-800/40 border border-zinc-700/50">
+                <div 
+                  key={pIdx} 
+                  onClick={() => {
+                    window.history.pushState({ view: { name: "detail", id: p.id } }, "");
+                    window.dispatchEvent(new PopStateEvent("popstate", { state: { view: { name: "detail", id: p.id } } }));
+                  }}
+                  className="text-xs p-2.5 rounded-lg flex justify-between bg-zinc-800/40 border border-zinc-700/50 cursor-pointer hover:bg-zinc-700/60 transition-colors"
+                >
                   <span className="text-zinc-200">{p.name}</span>
-                  <span className="text-emerald-400 font-mono">${p.price}</span>
+                  <span className="text-emerald-400 font-mono">₩{p.price.toLocaleString()}</span>
                 </div>
               ))}
             </div>

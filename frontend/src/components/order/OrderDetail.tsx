@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
-import type { OrderData, OrderStatus } from "../../api/orders";
+import { useEffect, useState, type ReactNode } from "react";
+import { fetchOrder, type OrderData, type OrderStatus } from "../../api/orders";
+import { fetchRefundHistory, type RefundHistory } from "../../api/refund";
 import { formatDate, formatDateTime, ORDER_STATUS_LABEL, orderStatusStyle } from "../../lib/order";
 import { C, krw } from "../../lib/theme";
 import { OrderItemRow } from "./OrderItemRow";
@@ -12,11 +13,53 @@ function canRequestRefund(status: OrderStatus) {
   return status !== "PENDING_PAYMENT" && status !== "CANCELED";
 }
 
-export function OrderDetail({ order, onBack }: { order: OrderData; onBack: () => void }) {
+const REFUND_STATUS_LABEL: Record<RefundHistory["status"], string> = {
+  COMPLETED: "환불 완료",
+  PG_FAILED: "환불 처리 지연 (확인 중)",
+};
+
+/* ─── 주문 상세 ──────────────────────────────────────────── */
+export function OrderDetail({
+                              order,
+                              onBack,
+                              onOrderUpdated,
+                            }: {
+  order: OrderData;
+  onBack: () => void;
+  /* 환불 등으로 주문 데이터가 바뀌었을 때, 최신 데이터를 다시 불러와서 반영한다 */
+  onOrderUpdated: (updated: OrderData) => void;
+}) {
   const [showRefund, setShowRefund] = useState(false);
+  const [refunds, setRefunds] = useState<RefundHistory[]>([]);
+
+  /* 환불 이력은 결제 건 단위라 orderId가 아니라 paymentId로 조회한다 */
+  useEffect(() => {
+    let active = true;
+    fetchRefundHistory(order.paymentId)
+        .then((history) => {
+          if (active) setRefunds(history);
+        })
+        .catch(() => {
+          /* 환불 이력이 없거나 조회 실패해도 주문 상세 자체는 정상 표시되어야 하므로 조용히 무시 */
+        });
+    return () => {
+      active = false;
+    };
+  }, [order.paymentId]);
+
   const itemsTotal = order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const quantityTotal = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const canceled = order.status === "CANCELED";
+
+  async function refreshAfterRefund() {
+    setShowRefund(false);
+    const [updatedOrder, history] = await Promise.all([
+      fetchOrder(order.orderId),
+      fetchRefundHistory(order.paymentId),
+    ]);
+    onOrderUpdated(updatedOrder);
+    setRefunds(history);
+  }
 
   return (
       <>
@@ -50,6 +93,7 @@ export function OrderDetail({ order, onBack }: { order: OrderData; onBack: () =>
             </span>
             </div>
 
+            {/* 취소 주문은 단계 대신 취소일 한 줄로 보여 준다 */}
             {canceled ? (
                 <p className="mt-5 text-sm" style={{ color: C.redBright, fontFamily: "Share Tech Mono" }}>
                   {order.canceledAt ? `${formatDate(order.canceledAt)} 취소됨` : "취소됨"}
@@ -100,6 +144,41 @@ export function OrderDetail({ order, onBack }: { order: OrderData; onBack: () =>
             </section>
           </div>
 
+          {/* 환불 정보 — 환불 이력이 있을 때만 노출 */}
+          {refunds.length > 0 && (
+              <section className="px-6 py-5" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+                <SectionLabel>// 환불 정보 {refunds.length}건</SectionLabel>
+                {refunds.map((refund, i) => (
+                    <div
+                        key={refund.refundId}
+                        className="py-3"
+                        style={{ borderTop: i > 0 ? `1px solid ${C.panelBorder}` : undefined }}
+                    >
+                      <div className="flex items-center justify-between text-xs mb-2">
+                  <span style={{ color: C.textMuted }}>
+                    {formatDateTime(refund.refundDate)} · {REFUND_STATUS_LABEL[refund.status]}
+                  </span>
+                        <span style={{ color: C.text, fontFamily: "Share Tech Mono" }}>
+                    {krw(refund.pgRefundAmount)}
+                  </span>
+                      </div>
+                      {refund.items.map((item) => (
+                          <div
+                              key={item.refundItemId}
+                              className="flex items-center justify-between text-[11px] pl-3 py-0.5"
+                              style={{ color: C.textDim }}
+                          >
+                    <span>
+                      {item.productName} <span style={{ color: C.textMuted }}>× {item.refundQuantity}</span>
+                    </span>
+                            <span style={{ fontFamily: "Share Tech Mono" }}>{krw(item.itemRefundAmount)}</span>
+                          </div>
+                      ))}
+                    </div>
+                ))}
+              </section>
+          )}
+
           {/* 하단 액션 */}
           <div className="px-6 py-4 flex gap-3">
             <button
@@ -128,22 +207,21 @@ export function OrderDetail({ order, onBack }: { order: OrderData; onBack: () =>
             <RefundModal
                 paymentId={order.paymentId}
                 onClose={() => setShowRefund(false)}
-                onSuccess={() => {
-                  setShowRefund(false);
-                  // 필요하면 여기서 주문 상세를 다시 불러오는 콜백을 부모로부터 받아 호출
-                }}
+                onSuccess={refreshAfterRefund}
             />
         )}
       </>
   );
 }
 
-/* 이하 OrderProgress, SectionLabel, InfoRow, AmountRow — 기존과 동일, 변경 없음 */
+/* 지난 단계는 채운 점, 현재 단계는 굵은 테두리 점, 남은 단계는 흐린 테두리 점 */
 function OrderProgress({ status }: { status: OrderStatus }) {
+  /* 결제 대기는 아직 어느 단계에도 오지 않았으므로 -1 이 된다 */
   const current = STEPS.indexOf(status);
 
   return (
       <div className="relative grid grid-cols-4 mt-6">
+        {/* 첫 점부터 마지막 점까지 잇는 선 */}
         <div className="absolute top-[7px] left-[12.5%] right-[12.5%] h-px" style={{ background: C.panelBorder }} />
 
         {STEPS.map((step, i) => {
