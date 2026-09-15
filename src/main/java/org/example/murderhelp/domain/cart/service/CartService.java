@@ -113,6 +113,22 @@ public class CartService {
         cartCacheEvictionService.evictCartItems(memberId);
     }
 
+    @Transactional
+    public void deleteItemsByProductIds(Long memberId, List<Long> productIds) {
+        List<Long> distinctIds = getDistinctIds(productIds);
+        if (distinctIds.isEmpty()) {
+            return;
+        }
+
+        List<CartItem> cartItems = cartItemRepository.findAllByMember_IdAndProduct_IdIn(memberId, distinctIds);
+        if (cartItems.isEmpty()) {
+            return;
+        }
+
+        cartItemRepository.deleteAllInBatch(cartItems);
+        cartCacheEvictionService.evictCartItems(memberId);
+    }
+
     private CartItem getOwnedItem(Long memberId, Long cartItemId) {
         return cartItemRepository.findByIdAndMember_Id(cartItemId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));

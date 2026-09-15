@@ -44,7 +44,7 @@ public class PaymentCommandService {
         paymentService.completePayment(payment);
 
         // Order 완료
-        order.transitTo(OrderStatus.DELIVERED);
+        order.transitTo(OrderStatus.PAID);
 
         // 장바구니 상품 삭제
         deleteCartItems(orderItems, order.getMember().getId());
@@ -111,6 +111,7 @@ public class PaymentCommandService {
                 .map(Product::getId)
                 .toList();
 
-        cartService.deleteItems(memberId, productIds);
+        cartService.deleteItemsByProductIds(memberId, productIds);   // ← 여기만 변경
     }
+
 }

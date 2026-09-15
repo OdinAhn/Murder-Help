@@ -31,10 +31,10 @@ public class Payment extends BaseTimeEntity {
     private String portonePaymentId;
 
     @Column(name = "amount", nullable = false)
-    private Long amount;
+    private long amount;
 
     @Column(name = "pg_amount", nullable = false)
-    private Long pgAmount;
+    private long pgAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -57,6 +57,7 @@ public class Payment extends BaseTimeEntity {
         this.order = order;
         this.portonePaymentId = generatePortonePaymentId();
         this.amount = amount;
+        this.pgAmount = amount;
         this.status = PaymentStatus.PENDING;
     }
 

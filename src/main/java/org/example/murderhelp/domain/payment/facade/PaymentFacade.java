@@ -48,7 +48,7 @@ public class PaymentFacade {
         // 요청의 PortOne Payment ID와 DB의 Payment ID가 같은지 검증
         validatePortonePaymentId(payment, request);
 
-        // 전액 포인트 결제라면 PG 조회를 하지 않는다.
+        // 0원 결제라면 PG 조회를 하지 않는다.
         if (payment.getPgAmount() == 0) {
             log.info("전액 포인트 결제 — PG 조회 스킵: paymentId={}", payment.getId());
 
