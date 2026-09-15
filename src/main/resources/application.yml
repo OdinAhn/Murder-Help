@@ -13,15 +13,15 @@ spring:
       port: ${REDIS_PORT:6379}
 
   datasource:
-    url: jdbc:mysql://localhost:3306/killer_mall?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: root
-    password: a12345
+    url: jdbc:mysql://localhost:3306/murder_help?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: killer_admin
+    password: 12345678
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
@@ -65,7 +65,7 @@ server:
 jwt:
   secret: "c3BhcnRhLXBheW1lbnQtand0LXNlY3JldC1rZXktZm9yLWJvb3RjYW1wLTIwMjYtdmVyeS1sb25nLXNlY3JldA=="  # Base64 encoded
   access-expiration: 1800000  # 1시간 (ms)
-  refresh-expiration: 1209600000    
+  refresh-expiration: 1209600000
 
 portone:
   base-url: "https://api.portone.io"
