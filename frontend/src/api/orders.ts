@@ -17,12 +17,12 @@ export type Receiver = {
 };
 
 export type OrderStatus =
-  | "PENDING_PAYMENT"
-  | "PAID"
-  | "PREPARING_DELIVERY"
-  | "SHIPPING"
-  | "DELIVERED"
-  | "CANCELED";
+    | "PENDING_PAYMENT"
+    | "PAID"
+    | "PREPARING_DELIVERY"
+    | "SHIPPING"
+    | "DELIVERED"
+    | "CANCELED";
 
 /* ─── 주문 생성 ─────────────────────────────────────────── */
 export type CreateOrderInput = {
@@ -35,14 +35,16 @@ export type CreateOrderInput = {
 
 export type CreatedOrder = {
   orderId: number;
+  paymentId: number;
+  portonePaymentId: string;
   orderNumber: string;
   status: OrderStatus;
   totalAmount: number;
 };
 
 /** POST /api/orders — 장바구니 항목으로 주문 생성
- *  서버가 재고를 차감하고 주문한 장바구니 항목을 지운 뒤, 결제 대기(PENDING_PAYMENT) 주문을 만든다.
- *  결제(PortOne)는 아직 백엔드에 없다. 붙으면 주문 생성 → 결제창 → /api/payments/confirm 순서가 된다. */
+ *  서버가 재고를 차감하고 결제 대기(PENDING_PAYMENT) 주문과 Payment를 함께 생성한다.
+ *  이후 흐름: 주문 생성 → PortOne.requestPayment(portonePaymentId) → /api/payments/confirm */
 export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder> {
   const response = await authFetch("/api/orders", {
     method: "POST",
@@ -127,8 +129,8 @@ export type OrderPage = {
 
 /** GET /api/orders — 로그인한 회원의 주문 내역 조회 (최신 주문순) */
 export async function fetchMyOrders(
-  params: { period: OrderPeriod; status?: OrderStatus; page: number; size: number },
-  signal?: AbortSignal,
+    params: { period: OrderPeriod; status?: OrderStatus; page: number; size: number },
+    signal?: AbortSignal,
 ): Promise<OrderPage> {
   const qs = new URLSearchParams({
     period: params.period,

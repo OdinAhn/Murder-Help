@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@portone/browser-sdk':
+        specifier: ^0.1.10
+        version: 0.1.10
       '@stomp/stompjs':
         specifier: ^7.3.0
         version: 7.3.0
@@ -124,6 +127,9 @@ packages:
     resolution: {integrity: sha512-WkFXliDbwFiziBSfvWXeM0Y3x07Kxxrl39kgsp+N3n5QgzsM8q6qe094+OW+hItDQ+9SSd2y9u231sMCsKxlog==}
     cpu: [x64]
     os: [win32]
+
+  '@portone/browser-sdk@0.1.10':
+    resolution: {integrity: sha512-UhvAhgWrGtjAMy8nqXUpHLSzm87TBAvo0PHbAfP3TXYqR6cYetqdrqGVGRxpY43Z7Rv+AxvHXWZ+e5xVvCPyEg==}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
     resolution: {integrity: sha512-pv1y2Fv0JybcykuiiD3qBOBdz6RteYojRFY1d+b95WVuzx211CRh+ytI/+9iVyWQ6koTh5dawe4S/yRfOFjgaA==}
@@ -673,6 +679,8 @@ snapshots:
 
   '@oxfmt/win32-x64@0.2.0':
     optional: true
+
+  '@portone/browser-sdk@0.1.10': {}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
     optional: true

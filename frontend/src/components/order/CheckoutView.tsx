@@ -1,5 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import * as PortOne from "@portone/browser-sdk/v2";
 import { createOrder, type Receiver } from "../../api/orders";
+import { confirmPayment } from "../../api/payment";
+import { getMyProfile } from "../../api/member";
 import type { Product } from "../../catalog";
 import { C, krw } from "../../lib/theme";
 import { FREE_SHIPPING_OVER, SHIPPING_FEE } from "../../lib/shipping";
@@ -11,8 +14,8 @@ import { SummaryRow } from "../common/SummaryRow";
 
 /* ─── checkout ───────────────────────────────────────────── */
 export function CheckoutView({
-  lines, cartItemIds, onBack, onDone,
-}: {
+                               lines, cartItemIds, onBack, onDone,
+                             }: {
   lines: { p: Product; qty: number }[];
   /* 주문 생성 API에 보낼 장바구니 항목 ID */
   cartItemIds: number[];
@@ -20,8 +23,16 @@ export function CheckoutView({
   onDone: (orderNo: string, total: number) => void;
 }) {
   const [r, setR] = useState<Receiver>({ name: "", phone: "", postcode: "", address: "", detail: "", memo: "" });
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  /* 결제창 호출에 필요한 구매자 이메일 — 로그인한 회원 정보에서 가져온다 */
+  useEffect(() => {
+    getMyProfile()
+        .then((profile) => setEmail(profile.email))
+        .catch(() => setError("회원 정보를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."));
+  }, []);
 
   const itemsTotal = lines.reduce((sum, l) => sum + l.p.price * l.qty, 0);
   const shipping = itemsTotal >= FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
@@ -38,9 +49,15 @@ export function CheckoutView({
       return;
     }
 
+    if (!email) {
+      setError("회원 정보를 아직 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+
     setBusy(true);
     setError("");
     try {
+      // 1. 주문 생성 (이 시점에 서버가 Payment까지 이미 만들어둠)
       const order = await createOrder({
         cartItemIds,
         receiverName: r.name.trim(),
@@ -49,6 +66,38 @@ export function CheckoutView({
         deliveryAddress: [r.postcode, r.address, r.detail].map((v) => v.trim()).filter(Boolean).join(" "),
         deliveryRequest: r.memo.trim() || undefined,
       });
+
+      // 2. 포트원 결제창 호출 - portonePaymentId를 그대로 사용
+      const orderName = lines.length > 1
+          ? `${lines[0].p.name} 외 ${lines.length - 1}건`
+          : lines[0].p.name;
+
+      const payment = await PortOne.requestPayment({
+        storeId: import.meta.env.VITE_PORTONE_STORE_ID,
+        channelKey: import.meta.env.VITE_PORTONE_CHANNEL_KEY,
+        paymentId: order.portonePaymentId,
+        orderName,
+        totalAmount: order.totalAmount,
+        currency: "CURRENCY_KRW",
+        payMethod: "CARD",
+        customer: {
+          email,
+          fullName: r.name.trim(),
+          phoneNumber: r.phone.trim(),
+        },
+      });
+
+      if (!payment || payment.code != null) {
+        // 결제창 자체에서 실패/취소된 경우, 또는 사용자가 결제창을 그냥 닫은 경우
+        throw new Error(payment?.message ?? "결제가 취소되었습니다.");
+      }
+
+      // 3. 서버 승인 요청 (결과와 무관하게 항상 호출 - 서버가 PortOne API 재조회로 최종 검증)
+      await confirmPayment({
+        orderId: order.orderId,
+        portonePaymentId: order.portonePaymentId,
+      });
+
       /* 완료 화면에는 서버가 확정한 주문번호와 금액을 쓴다 */
       onDone(order.orderNumber, order.totalAmount);
     } catch (error) {
@@ -58,106 +107,106 @@ export function CheckoutView({
   }
 
   return (
-    <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8">
-      <button
-        onClick={onBack}
-        className="text-xs uppercase tracking-widest mb-4"
-        style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}
-      >
-        ← 장바구니로
-      </button>
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-8">
+        <button
+            onClick={onBack}
+            className="text-xs uppercase tracking-widest mb-4"
+            style={{ color: C.textDim, fontFamily: "Share Tech Mono" }}
+        >
+          ← 장바구니로
+        </button>
 
-      <PageTitle note="// 배송 정보를 입력해 주세요">Checkout</PageTitle>
+        <PageTitle note="// 배송 정보를 입력해 주세요">Checkout</PageTitle>
 
-      <form onSubmit={submit} className="flex flex-col lg:flex-row gap-6 items-start">
-        {/* 배송 정보 */}
-        <div className="flex-1 w-full p-6" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-          <div className="text-[10px] uppercase tracking-widest mb-5" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
-            // 배송지
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <Field label="받는 분 *" value={r.name} onChange={set("name")} placeholder="홍길동" />
-            <Field label="연락처 *" value={r.phone} onChange={set("phone")} placeholder="010-0000-0000" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <Field label="우편번호" value={r.postcode} onChange={set("postcode")} placeholder="00000" />
-            <div className="md:col-span-2">
-              <Field label="주소 *" value={r.address} onChange={set("address")} placeholder="시/도 구/군 도로명" />
+        <form onSubmit={submit} className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* 배송 정보 */}
+          <div className="flex-1 w-full p-6" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
+            <div className="text-[10px] uppercase tracking-widest mb-5" style={{ color: C.textMuted, fontFamily: "Share Tech Mono" }}>
+              // 배송지
             </div>
-          </div>
 
-          <div className="mb-4">
-            <Field label="상세 주소" value={r.detail} onChange={set("detail")} placeholder="동 · 호수" />
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <Field label="받는 분 *" value={r.name} onChange={set("name")} placeholder="홍길동" />
+              <Field label="연락처 *" value={r.phone} onChange={set("phone")} placeholder="010-0000-0000" />
+            </div>
 
-          <Field label="배송 요청사항" value={r.memo} onChange={set("memo")} placeholder="부재 시 경비실에 맡겨주세요" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <Field label="우편번호" value={r.postcode} onChange={set("postcode")} placeholder="00000" />
+              <div className="md:col-span-2">
+                <Field label="주소 *" value={r.address} onChange={set("address")} placeholder="시/도 구/군 도로명" />
+              </div>
+            </div>
 
-          <div className="mt-6 pt-5 flex items-start gap-3" style={{ borderTop: `1px solid ${C.panelBorder}` }}>
+            <div className="mb-4">
+              <Field label="상세 주소" value={r.detail} onChange={set("detail")} placeholder="동 · 호수" />
+            </div>
+
+            <Field label="배송 요청사항" value={r.memo} onChange={set("memo")} placeholder="부재 시 경비실에 맡겨주세요" />
+
+            <div className="mt-6 pt-5 flex items-start gap-3" style={{ borderTop: `1px solid ${C.panelBorder}` }}>
             <span
-              className="text-[10px] uppercase tracking-widest shrink-0"
-              style={{ color: C.textMuted, fontFamily: "Share Tech Mono", paddingTop: 2 }}
+                className="text-[10px] uppercase tracking-widest shrink-0"
+                style={{ color: C.textMuted, fontFamily: "Share Tech Mono", paddingTop: 2 }}
             >
               연령 확인
             </span>
-            <span className="text-xs leading-relaxed" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif" }}>
+              <span className="text-xs leading-relaxed" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif" }}>
               BB탄 전용 에어소프트 제품으로, 만 18세 이상만 구매하실 수 있습니다. 주문 시 연령 확인에 동의한 것으로 봅니다.
             </span>
+            </div>
           </div>
-        </div>
 
-        {/* 주문 요약 */}
-        <div className="w-full lg:w-80 shrink-0 p-5" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
-          <OrderSummaryHeader itemCount={lines.length} />
+          {/* 주문 요약 */}
+          <div className="w-full lg:w-80 shrink-0 p-5" style={{ background: C.panel, border: `1px solid ${C.panelBorder}` }}>
+            <OrderSummaryHeader itemCount={lines.length} />
 
-          <div className="mb-4" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
-            {lines.map(({ p, qty }) => (
-              <div key={p.id} className="flex justify-between items-baseline gap-3 py-1.5">
+            <div className="mb-4" style={{ borderBottom: `1px solid ${C.panelBorder}` }}>
+              {lines.map(({ p, qty }) => (
+                  <div key={p.id} className="flex justify-between items-baseline gap-3 py-1.5">
                 <span className="text-xs truncate" style={{ color: C.textDim, fontFamily: "Noto Sans KR, sans-serif" }}>
                   {p.name} <span style={{ color: C.textMuted }}>× {qty}</span>
                 </span>
-                <span className="text-xs shrink-0" style={{ color: C.text, fontFamily: "Share Tech Mono" }}>
+                    <span className="text-xs shrink-0" style={{ color: C.text, fontFamily: "Share Tech Mono" }}>
                   {krw(p.price * qty)}
                 </span>
-              </div>
-            ))}
-          </div>
+                  </div>
+              ))}
+            </div>
 
-          <SummaryRow label="상품 합계" value={krw(itemsTotal)} />
-          <SummaryRow label="배송비" value={shipping === 0 ? "무료" : krw(shipping)} />
+            <SummaryRow label="상품 합계" value={krw(itemsTotal)} />
+            <SummaryRow label="배송비" value={shipping === 0 ? "무료" : krw(shipping)} />
 
-          <div className="flex justify-between items-baseline py-3 mt-2" style={{ borderTop: `1px solid ${C.panelBorder}` }}>
+            <div className="flex justify-between items-baseline py-3 mt-2" style={{ borderTop: `1px solid ${C.panelBorder}` }}>
             <span className="text-xs uppercase tracking-widest" style={{ color: C.text, fontFamily: "Share Tech Mono" }}>
               총 결제금액
             </span>
-            <span className="text-xl font-bold" style={{ color: C.redBright, fontFamily: "Share Tech Mono" }}>
+              <span className="text-xl font-bold" style={{ color: C.redBright, fontFamily: "Share Tech Mono" }}>
               {krw(total)}
             </span>
+            </div>
+
+            {error && (
+                <p className="text-xs mb-3" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
+                  {error}
+                </p>
+            )}
+
+            <button
+                type="submit"
+                disabled={busy}
+                className="w-full py-3.5 mt-2 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2"
+                style={{
+                  background: busy ? C.redDim : C.red,
+                  color: "#fff",
+                  border: `1px solid ${busy ? C.redDim : C.redBright}`,
+                  fontFamily: "Share Tech Mono",
+                  cursor: busy ? "wait" : "pointer",
+                }}
+            >
+              {busy ? <><Spinner /> 결제 처리 중…</> : `${krw(total)} 결제하기 →`}
+            </button>
           </div>
-
-          {error && (
-            <p className="text-xs mb-3" style={{ color: C.redBright, fontFamily: "Noto Sans KR, sans-serif" }}>
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full py-3.5 mt-2 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2"
-            style={{
-              background: busy ? C.redDim : C.red,
-              color: "#fff",
-              border: `1px solid ${busy ? C.redDim : C.redBright}`,
-              fontFamily: "Share Tech Mono",
-              cursor: busy ? "wait" : "pointer",
-            }}
-          >
-            {busy ? <><Spinner /> 결제 처리 중…</> : `${krw(total)} 결제하기 →`}
-          </button>
-        </div>
-      </form>
-    </div>
+        </form>
+      </div>
   );
 }
